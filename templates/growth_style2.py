@@ -16,6 +16,7 @@ from utils.chart import render_bar_chart
 from utils.backgrounds import render_background
 from utils.map import render_world_map
 from utils.fonts import get_default_font_path
+from utils.units import short_label
 
 
 NAVY = "#0B2F7A"
@@ -41,7 +42,7 @@ def render(
     cagr,
     years,
     values,
-    unit="Million",
+    unit="Millones",
     website="www.example.com",
     logo_path=None,
     background="Modern White",
@@ -81,7 +82,7 @@ def render(
               fill=NAVY, width=2)
 
     subtitle_font = _font(font_medium, int(width * 0.015))
-    subtitle = f"Tamaño del Mercado ({currency} {'Mil Millones' if unit == 'Billion' else 'Millones'})"
+    subtitle = f"Tamaño del Mercado ({currency} {short_label(unit)})"
     sbbox = draw.textbbox((0, 0), subtitle, font=subtitle_font)
     sw = sbbox[2] - sbbox[0]
     draw.text((center_x - sw / 2, margin * 0.7 + title_font.size + 30), subtitle, fill=GREY_TEXT, font=subtitle_font)
@@ -106,7 +107,7 @@ def render(
 
     start_display = f"{currency} {start_value:.2f}".replace(".", ",")
     end_display = f"{currency} {end_value:.2f}".replace(".", ",")
-    unit_word = "Millones" if unit != "Billion" else "Mil Millones"
+    unit_word = short_label(unit)
 
     callout_y = int(height * 0.40)
 

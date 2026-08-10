@@ -1,8 +1,9 @@
 """
 pages/segmentation.py
 Streamlit page: "Segmentation" donut chart image generator.
-Segment count selector (2-6) + segment name inputs + auto colors/labels/
-connector lines + live preview + export.
+Segment count selector (2-8) + segment name inputs + Auto-Fetch paste box
+(regex extraction of segment/category names from a report paragraph) +
+auto colors/labels/connector lines + live preview + export.
 """
 
 import os
@@ -12,6 +13,7 @@ import streamlit as st
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from utils.parser import extract_segments_from_text
 from utils.export import export_image, file_extension_for
 from utils.fonts import list_available_fonts, get_default_font_path
 from utils.state import init_state, get_canvas_size
@@ -32,7 +34,40 @@ def render_page():
 
     market_name = st.text_input("Market Name", value=st.session_state.get("seg_market_name", "Proteína de Origen Vegetal en México"))
 
-    n_segments = st.select_slider("Número de segmentos", options=[2, 3, 4, 5, 6], value=5)
+    with st.expander("📋 Auto Fetch — Pega un párrafo de reporte (IMARC / IDE)", expanded=True):
+        pasted_seg_text = st.text_area(
+            "Special Paste Box",
+            placeholder=(
+                "The market can be segmented based on product type, application, "
+                "source, distribution channel, and region."
+            ),
+            height=100,
+            key="seg_paste_box",
+        )
+        if st.button("🔍 Extraer segmentos", key="seg_extract_btn"):
+            found = extract_segments_from_text(pasted_seg_text)
+            if found:
+                # Seed the text_input widget state directly (widget keys are
+                # the single source of truth here, so this is safe to set
+                # before those widgets are instantiated below) and clear any
+                # slots beyond what was found.
+                for i in range(8):
+                    if i < len(found):
+                        st.session_state[f"seg_label_input_{i}"] = found[i]
+                    else:
+                        st.session_state.pop(f"seg_label_input_{i}", None)
+                st.session_state["seg_n_segments_pending"] = max(2, min(8, len(found)))
+                st.success(f"Extraídos {len(found)} segmentos: {', '.join(found)}")
+                st.rerun()
+            else:
+                st.warning("No se encontraron segmentos en el texto. Prueba con un párrafo que mencione 'segmentado por...' o 'By Product Type:'.")
+
+    slider_default = st.session_state.pop("seg_n_segments_pending", None) or st.session_state.get("seg_n_segments", 5)
+    n_segments = st.select_slider(
+        "Número máximo de campos a mostrar", options=[2, 3, 4, 5, 6, 7, 8],
+        value=slider_default, key="seg_n_segments",
+    )
+    st.caption("La imagen mostrará solo los segmentos con nombre — deja el campo vacío para no incluirlo.")
 
     st.subheader("Segmentos")
     labels = []
@@ -41,8 +76,10 @@ def render_page():
     for i in range(n_segments):
         col = cols[i % 2]
         with col:
-            default_label = PRESET_LABELS[i] if i < len(PRESET_LABELS) else f"Segmento {i + 1}"
-            label = st.text_input(f"Segmento {i + 1}", value=default_label, key=f"seg_label_{i}")
+            input_key = f"seg_label_input_{i}"
+            if input_key not in st.session_state:
+                st.session_state[input_key] = PRESET_LABELS[i] if i < len(PRESET_LABELS) else ""
+            label = st.text_input(f"Segmento {i + 1}", key=input_key)
             color = st.color_picker(f"Color {i + 1}", value=DEFAULT_PALETTE[i % len(DEFAULT_PALETTE)], key=f"seg_color_{i}")
             labels.append(label)
             colors.append(color)
@@ -66,21 +103,31 @@ def render_page():
         with open(logo_path, "wb") as f:
             f.write(logo_file.getvalue())
 
+    # Only keep segments that actually have a non-empty label typed in --
+    # the donut renders exactly as many slices as labels provided, not the
+    # slider count.
+    filled = [(label.strip(), color) for label, color in zip(labels, colors) if label.strip()]
+
     if st.button("🎨 Generar Imagen", type="primary", width='stretch'):
-        img = segmentation_style.render(
-            market_name=market_name,
-            segments=labels,
-            colors=colors,
-            website=website,
-            logo_path=logo_path,
-            background=background,
-            font_regular=font_regular_path,
-            font_bold=font_bold_path,
-            width=width,
-            height=height,
-        )
-        st.session_state["seg_last_image"] = img
-        st.session_state["seg_market_name"] = market_name
+        if len(filled) < 2:
+            st.error("Escribe al menos 2 segmentos con nombre para generar la imagen.")
+        else:
+            final_labels = [label for label, _ in filled]
+            final_colors = [color for _, color in filled]
+            img = segmentation_style.render(
+                market_name=market_name,
+                segments=final_labels,
+                colors=final_colors,
+                website=website,
+                logo_path=logo_path,
+                background=background,
+                font_regular=font_regular_path,
+                font_bold=font_bold_path,
+                width=width,
+                height=height,
+            )
+            st.session_state["seg_last_image"] = img
+            st.session_state["seg_market_name"] = market_name
 
     if "seg_last_image" in st.session_state:
         img = st.session_state["seg_last_image"]

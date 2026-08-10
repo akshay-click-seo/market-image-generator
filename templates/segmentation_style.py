@@ -41,17 +41,18 @@ def render(
     height=1130,
 ):
     """
-    Compose the Segmentation donut dashboard image.
+    Compose the Segmentation donut dashboard image. The donut always renders
+    exactly len(segments) slices -- pass only the segments you want shown.
 
     Args:
         market_name: str, used in the title
-        segments: list of 2-6 label strings, e.g. ["Por Tipo de Producto", "Por Aplicación", ...]
+        segments: list of 2-8 label strings, e.g. ["Por Tipo de Producto", "Por Aplicación", ...]
         colors: optional list of hex colors, one per segment
 
     Returns PIL.Image (RGB).
     """
-    if not (2 <= len(segments) <= 6):
-        raise ValueError("segments must contain between 2 and 6 labels")
+    if not (2 <= len(segments) <= 8):
+        raise ValueError("segments must contain between 2 and 8 labels")
 
     font_regular = font_regular or get_default_font_path("Regular")
     font_bold = font_bold or get_default_font_path("Bold")

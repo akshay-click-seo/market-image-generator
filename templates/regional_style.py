@@ -15,6 +15,7 @@ from utils.backgrounds import render_background
 from utils.map import render_world_map, get_country_iso2, iso2_to_flag_emoji
 from utils.icons import get_icon
 from utils.fonts import get_default_font_path
+from utils.units import short_label
 
 
 NAVY = "#0B2F7A"
@@ -39,7 +40,7 @@ def render(
     forecast_year,
     base_value,
     forecast_value,
-    unit="Million",
+    unit="Millones",
     website="www.example.com",
     logo_path=None,
     background="Light",
@@ -120,7 +121,7 @@ def render(
 
     base_display = f"{currency} {base_value:.2f}".replace(".", ",")
     forecast_display = f"{currency} {forecast_value:.2f}".replace(".", ",")
-    unit_word = "Mil Millones" if unit == "Billion" else "Millones"
+    unit_word = short_label(unit)
 
     cards = [
         ("bar_chart", f"{base_display} {unit_word}", f"Tamaño del Mercado en {base_year}"),

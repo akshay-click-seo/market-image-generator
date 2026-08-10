@@ -18,6 +18,7 @@ from utils.parser import extract_from_text, generate_yearly_values, compute_cagr
 from utils.export import export_image, file_extension_for
 from utils.fonts import list_available_fonts, get_default_font_path
 from utils.state import init_state, get_canvas_size
+from utils.units import UNIT_LABELS
 from templates import growth_style1, growth_style2
 
 
@@ -49,7 +50,7 @@ def render_page():
             st.session_state["growth_forecast_year"] = extracted.forecast_year or 2035
             st.session_state["growth_cagr"] = extracted.cagr or 0.0
             st.session_state["growth_currency"] = extracted.currency or "USD"
-            st.session_state["growth_unit"] = extracted.unit or "Million"
+            st.session_state["growth_unit"] = extracted.unit or "Millones"
             st.success(
                 f"Extraído: {extracted.currency} {extracted.start_value} ({extracted.base_year}) → "
                 f"{extracted.currency} {extracted.end_value} ({extracted.forecast_year}), "
@@ -66,7 +67,9 @@ def render_page():
     with c2:
         base_year = st.number_input("Base Year", value=int(st.session_state.get("growth_base_year", 2025)), step=1)
         forecast_year = st.number_input("Forecast Year", value=int(st.session_state.get("growth_forecast_year", 2036)), step=1)
-        unit = st.selectbox("Unit", ["Million", "Billion"], index=["Million", "Billion"].index(st.session_state.get("growth_unit", "Million")))
+        default_unit = st.session_state.get("growth_unit", "Millones")
+        unit_index = UNIT_LABELS.index(default_unit) if default_unit in UNIT_LABELS else UNIT_LABELS.index("Millones")
+        unit = st.selectbox("Unit", UNIT_LABELS, index=unit_index)
     with c3:
         start_value = st.number_input("Start Value", value=float(st.session_state.get("growth_start_value", 2.4)), format="%.2f")
         end_value = st.number_input("End Value", value=float(st.session_state.get("growth_end_value", 29.8)), format="%.2f")

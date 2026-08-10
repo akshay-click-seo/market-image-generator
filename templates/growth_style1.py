@@ -16,6 +16,7 @@ from utils.chart import render_bar_chart
 from utils.backgrounds import render_background
 from utils.icons import get_icon
 from utils.fonts import get_default_font_path
+from utils.units import short_label
 
 
 NAVY = "#0B2F7A"
@@ -43,7 +44,7 @@ def render(
     cagr,
     years,
     values,
-    unit="Million",
+    unit="Millones",
     website="www.example.com",
     logo_path=None,
     background="Classic Blue",
@@ -92,7 +93,7 @@ def render(
     chart_top = max(int(height * 0.15), underline_y + int(height * 0.04))
     chart_h = int(height * 0.98) - chart_top - int(height * 0.06)
     value_fmt = "{:.1f}"
-    unit_label_full = "Mil Millones" if unit == "Billion" else "Millones"
+    unit_label_full = short_label(unit)
     bar_img = render_bar_chart(
         years, values,
         width_px=chart_w, height_px=chart_h,

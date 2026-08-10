@@ -16,6 +16,7 @@ from utils.map import find_country_feature
 from utils.export import export_image, file_extension_for
 from utils.fonts import list_available_fonts, get_default_font_path
 from utils.state import init_state, get_canvas_size
+from utils.units import UNIT_LABELS
 from templates import regional_style
 
 
@@ -50,7 +51,7 @@ def render_page():
     with c4:
         forecast_value = st.number_input("Forecast Value", value=223.5, format="%.2f")
 
-    unit = st.selectbox("Unit", ["Million", "Billion"])
+    unit = st.selectbox("Unit", UNIT_LABELS, index=UNIT_LABELS.index("Millones"))
 
     # ---- Auto: flag / pin / highlight preview ----
     feature = find_country_feature(country)

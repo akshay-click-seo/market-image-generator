@@ -19,6 +19,8 @@ import re
 from dataclasses import dataclass, asdict
 from typing import Optional
 
+from utils.units import detect_unit as _detect_unit_from_list, UNIT_DETECT_REGEX
+
 
 CURRENCY_SYMBOLS = {
     "$": "USD", "USD": "USD", "US$": "USD",
@@ -40,7 +42,7 @@ UNIT_MULTIPLIERS = {
     "trillion": 1_000_000,
 }
 
-NUM = r"(?:USD|US\$|\$|€|£|₹|¥)?\s*([\d,]+(?:\.\d+)?)"
+NUM = r"(?:USD|US\$|\$|€|£|₹|¥)?\s*(\d[\d,]*(?:\.\d+)?)"
 
 
 @dataclass
@@ -60,7 +62,16 @@ class ExtractedData:
 
 
 def _clean_number(s):
-    return float(s.replace(",", ""))
+    """Parse a matched numeric string to float. Returns None instead of raising
+    if the match is malformed (e.g. a stray comma with no digits) so a single
+    bad regex match never crashes the whole extraction."""
+    cleaned = s.replace(",", "").strip()
+    if not cleaned:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
 
 
 def _detect_currency(text):
@@ -72,12 +83,19 @@ def _detect_currency(text):
 
 
 def _detect_unit(text):
+    """Detect the unit of measure mentioned in free text. Recognizes the full
+    report unit list (Millones, Toneladas, Barriles, MW, GWh, ...) in
+    addition to the classic Million/Billion, defaulting to 'Millones' if
+    nothing is found."""
+    found = _detect_unit_from_list(text)
+    if found:
+        return found
     lower = text.lower()
-    if "mil millones" in lower or "billion" in lower or re.search(r"\bbn\b", lower):
-        return "Billion"
-    if "millones" in lower or "million" in lower or re.search(r"\bmn\b", lower):
-        return "Million"
-    return "Million"
+    if re.search(r"\bbn\b", lower):
+        return "Mil Millones"
+    if re.search(r"\bmn\b", lower):
+        return "Millones"
+    return "Millones"
 
 
 def extract_from_text(text: str) -> ExtractedData:
@@ -107,42 +125,36 @@ def extract_from_text(text: str) -> ExtractedData:
         y1, y2 = int(period_match.group(1)), int(period_match.group(2))
         result.forecast_period = f"{y1}-{y2}"
 
+    _unit_group = UNIT_DETECT_REGEX.pattern.strip("()")
+
     # --- Base year value: "reached USD 145 Million in 2025" / "alcanzo ... USD 2.4 Mil Millones en 2025"
     base_match = re.search(
-        NUM + r"\s*(mil millones|millones|million|billion|bn|mn)?\s*(?:.{0,20}?)\b(?:in|en)\s+(20\d{2})",
+        NUM + r"\s*(" + _unit_group + r"|bn|mn)?\s*(?:.{0,20}?)\b(?:in|en)\s+(20\d{2})",
         t, re.IGNORECASE
     )
     if base_match:
         result.start_value = _clean_number(base_match.group(1))
         result.base_year = int(base_match.group(3))
         if base_match.group(2):
-            local_unit = base_match.group(2).lower()
-            if local_unit in ("mil millones", "billion", "bn"):
-                result.unit = "Billion"
-            else:
-                result.unit = "Million"
+            result.unit = _detect_unit(base_match.group(2))
 
     # --- End/forecast value: "reach USD 367.3 Million by 2035" / "alcance USD 29.8 Mil Millones para 2036"
     end_match = re.search(
-        NUM + r"\s*(mil millones|millones|million|billion|bn|mn)?\s*(?:.{0,20}?)\b(?:by|para|para el año|hacia)\s+(20\d{2})",
+        NUM + r"\s*(" + _unit_group + r"|bn|mn)?\s*(?:.{0,20}?)\b(?:by|para|para el año|hacia)\s+(20\d{2})",
         t, re.IGNORECASE
     )
     if end_match:
         result.end_value = _clean_number(end_match.group(1))
         result.forecast_year = int(end_match.group(3))
         if end_match.group(2):
-            local_unit = end_match.group(2).lower()
-            if local_unit in ("mil millones", "billion", "bn"):
-                result.unit = "Billion"
-            else:
-                result.unit = "Million"
+            result.unit = _detect_unit(end_match.group(2))
 
     # --- Fallbacks: if base/end not matched via "in/by" pattern, fall back to first two
     # currency-prefixed numbers found in order of appearance.
     if result.start_value is None or result.end_value is None:
         all_nums = re.findall(NUM, t)
         if all_nums:
-            nums = [_clean_number(n) for n in all_nums]
+            nums = [n for n in (_clean_number(x) for x in all_nums) if n is not None]
             if result.start_value is None and len(nums) >= 1:
                 result.start_value = nums[0]
             if result.end_value is None and len(nums) >= 2:
@@ -184,3 +196,98 @@ def generate_yearly_values(start_value, cagr_pct, num_years):
         return []
     rate = cagr_pct / 100.0
     return [round(start_value * ((1 + rate) ** i), 2) for i in range(num_years + 1)]
+
+
+# --- Segmentation extraction -------------------------------------------------
+
+# Category headers commonly used to introduce a segmentation dimension in
+# IMARC / Informes de Expertos style reports, e.g. "By Product Type:" or
+# "Por Tipo de Producto:".
+_SEGMENT_CATEGORY_WORDS = [
+    "product type", "tipo de producto", "application", "aplicación", "aplicacion",
+    "source", "fuente", "distribution channel", "canal de distribución", "canal de distribucion",
+    "region", "región", "región", "end user", "usuario final", "type", "tipo",
+    "component", "componente", "technology", "tecnología", "tecnologia",
+    "industry vertical", "vertical de la industria", "deployment mode", "modo de implementación",
+]
+
+_LABELED_SEGMENT_RE = re.compile(
+    r"\b(?:by|por)\s+([A-Za-zÀ-ÿ][\w\sÀ-ÿ]{2,40}?)\s*[:：]",
+    re.IGNORECASE,
+)
+
+# "segmented by X, Y, and Z" / "segmentado por X, Y y Z" / "segmentarse en
+# base a X, Y y Z" — captures the list tail after a segmentation verb
+# phrase, up to a sentence boundary.
+_SEGMENT_LIST_INTRO_RE = re.compile(
+    r"(?:segment(?:ed|ación|acion)?\s*(?:can\s+be\s+)?(?:based\s+on|by)"
+    r"|segmentars?e\s+(?:en\s+base\s+a|por)"
+    r"|segmentad[oa]\s+(?:en\s+base\s+a|por))\s+"
+    r"([^.]{3,250})",
+    re.IGNORECASE,
+)
+
+
+def _split_list_tail(tail):
+    """Split a trailing 'A, B, C and D' / 'A, B y C' clause into clean items,
+    stripping any repeated 'by'/'por' prefix that leaks in from patterns
+    like 'by X, by Y, and by Z'."""
+    # Normalize "and"/"y" before the last item into a comma so a simple split works.
+    tail = re.sub(r"\s*,?\s+(?:and|y)\s+", ", ", tail, flags=re.IGNORECASE)
+    items = [item.strip(" .") for item in tail.split(",")]
+    items = [re.sub(r"^(?:by|por)\s+", "", item, flags=re.IGNORECASE) for item in items]
+    items = [item.strip(" .") for item in items]
+    items = [item for item in items if item and len(item) <= 60]
+    return items
+
+
+def _title_case_label(label):
+    """Turn a raw extracted phrase into a display-ready segment label, e.g.
+    'product type' -> 'Por Tipo de Producto' style is NOT attempted here --
+    we simply title-case the phrase as extracted (works for both EN and ES
+    source text) so results stay faithful to the source wording."""
+    label = re.sub(r"\s+", " ", label).strip(" .:")
+    if not label:
+        return label
+    return label[0].upper() + label[1:]
+
+
+def extract_segments_from_text(text, max_segments=8):
+    """
+    Best-effort extraction of segmentation category names from a pasted
+    report paragraph. Tries two strategies, in order:
+
+    1. Labeled headers: "By Product Type:", "Por Aplicación:", etc. --
+       collects every distinct category header found in the text.
+    2. List-style sentence: "The market is segmented based on product type,
+       application, source, and region." -- splits the trailing list.
+
+    Returns a list of segment label strings (may be empty if nothing matched).
+    """
+    if not text or not text.strip():
+        return []
+
+    t = text.strip()
+
+    # Strategy 1: labeled headers (works even if headers are scattered
+    # across the paragraph, e.g. multiple "By X:" occurrences).
+    labeled = _LABELED_SEGMENT_RE.findall(t)
+    labeled = [_title_case_label(m) for m in labeled]
+    labeled = [m for m in labeled if m]
+    if len(labeled) >= 2:
+        seen = []
+        for label in labeled:
+            if label.lower() not in [s.lower() for s in seen]:
+                seen.append(label)
+        return seen[:max_segments]
+
+    # Strategy 2: "segmented by/based on A, B, and C" list sentence.
+    list_match = _SEGMENT_LIST_INTRO_RE.search(t)
+    if list_match:
+        items = _split_list_tail(list_match.group(1))
+        items = [_title_case_label(i) for i in items]
+        items = [i for i in items if i]
+        if len(items) >= 2:
+            return items[:max_segments]
+
+    return []
