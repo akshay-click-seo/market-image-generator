@@ -16,6 +16,7 @@ from utils.map import render_world_map, get_country_iso2, iso2_to_flag_emoji
 from utils.icons import get_icon
 from utils.fonts import get_default_font_path
 from utils.units import short_label
+from utils.numfmt import format_es_number
 
 
 NAVY = "#0B2F7A"
@@ -119,8 +120,8 @@ def render(
     card_gap = int(height * 0.03)
     card_y = map_top + int(height * 0.08)
 
-    base_display = f"{currency} {base_value:.2f}".replace(".", ",")
-    forecast_display = f"{currency} {forecast_value:.2f}".replace(".", ",")
+    base_display = f"{currency} {format_es_number(base_value, 2)}"
+    forecast_display = f"{currency} {format_es_number(forecast_value, 2)}"
     unit_word = short_label(unit)
 
     cards = [

@@ -17,6 +17,7 @@ from utils.backgrounds import render_background
 from utils.map import render_world_map
 from utils.fonts import get_default_font_path
 from utils.units import short_label
+from utils.numfmt import format_es_number, format_es_percent
 
 
 NAVY = "#0B2F7A"
@@ -88,7 +89,7 @@ def render(
     draw.text((center_x - sw / 2, margin * 0.7 + title_font.size + 30), subtitle, fill=GREY_TEXT, font=subtitle_font)
 
     # ---- CAGR card (top-left) ----
-    cagr_display = f"{cagr:.2f}%".replace(".", ",")
+    cagr_display = format_es_percent(cagr, 2)
     card_w, card_h = int(width * 0.24), int(height * 0.16)
     card_x, card_y = margin, int(height * 0.18)
     draw.rounded_rectangle([card_x, card_y, card_x + card_w, card_y + card_h],
@@ -105,8 +106,8 @@ def render(
     callout_font_val = _font(font_bold, int(width * 0.02))
     callout_font_label = _font(font_medium, int(width * 0.012))
 
-    start_display = f"{currency} {start_value:.2f}".replace(".", ",")
-    end_display = f"{currency} {end_value:.2f}".replace(".", ",")
+    start_display = f"{currency} {format_es_number(start_value, 2)}"
+    end_display = f"{currency} {format_es_number(end_value, 2)}"
     unit_word = short_label(unit)
 
     callout_y = int(height * 0.40)
@@ -116,14 +117,14 @@ def render(
     chart_x = margin
     chart_top = callout_y + int(height * 0.075)
     chart_h = int(height * 0.98) - chart_top - int(height * 0.06)
-    value_fmt = "{:.2f}" if max(values) < 1000 else "{:.0f}"
+    value_decimals = 2 if max(values) < 1000 else 0
     bar_img = render_bar_chart(
         years, values,
         width_px=chart_w, height_px=chart_h,
         bar_color=NAVY, label_color=NAVY, axis_color=TEXT_DARK,
         background="none", font_path=font_bold,
         y_label="",
-        value_fmt=value_fmt,
+        value_formatter=lambda v: format_es_number(v, value_decimals),
     )
     canvas.alpha_composite(bar_img, (chart_x, chart_top))
 

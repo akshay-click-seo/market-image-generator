@@ -17,6 +17,7 @@ from utils.backgrounds import render_background
 from utils.icons import get_icon
 from utils.fonts import get_default_font_path
 from utils.units import short_label
+from utils.numfmt import format_es_number, format_es_percent
 
 
 NAVY = "#0B2F7A"
@@ -92,7 +93,6 @@ def render(
     chart_w = int(width * 0.68)
     chart_top = max(int(height * 0.15), underline_y + int(height * 0.04))
     chart_h = int(height * 0.98) - chart_top - int(height * 0.06)
-    value_fmt = "{:.1f}"
     unit_label_full = short_label(unit)
     bar_img = render_bar_chart(
         years, values,
@@ -100,7 +100,7 @@ def render(
         bar_color=NAVY, label_color=NAVY, axis_color=TEXT_DARK,
         background="none", font_path=font_bold,
         y_label=f"Valor de Mercado en {unit_label_full} de USD",
-        value_fmt=value_fmt,
+        value_formatter=lambda v: format_es_number(v, 1),
     )
     canvas.alpha_composite(bar_img, (margin, chart_top))
 
@@ -114,9 +114,9 @@ def render(
     card_gap = int(height * 0.025)
     card_h = int((height - chart_top - 3 * card_gap) / 4)
 
-    cagr_display = f"{cagr:.1f}%".replace(".", ",")
-    end_display = f"{end_value:.1f}".replace(".", ",")
-    start_display = f"{start_value:.1f}".replace(".", ",")
+    cagr_display = format_es_percent(cagr, 1)
+    end_display = format_es_number(end_value, 1)
+    start_display = format_es_number(start_value, 1)
 
     cards = [
         {

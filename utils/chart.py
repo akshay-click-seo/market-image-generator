@@ -35,6 +35,7 @@ def render_bar_chart(
     font_path=None,
     y_label="Market Value (USD Million)",
     value_fmt="{:.1f}",
+    value_formatter=None,
     dpi=150,
     highlight_last=False,
     highlight_color="#173F99",
@@ -67,8 +68,9 @@ def render_bar_chart(
     # value labels on top of bars
     max_val = max(values) if values else 1
     for xi, v in zip(x, values):
+        label_text = value_formatter(v) if value_formatter else value_fmt.format(v)
         ax.text(
-            xi, v + max_val * 0.02, value_fmt.format(v),
+            xi, v + max_val * 0.02, label_text,
             ha="center", va="bottom", fontsize=max(9, int(width_px / 90)),
             fontweight="bold", color=label_color,
         )
