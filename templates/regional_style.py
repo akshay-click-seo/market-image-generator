@@ -10,9 +10,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import math
+
 from PIL import Image, ImageDraw, ImageFont
 from utils.backgrounds import render_background
-from utils.map import render_world_map, get_country_iso2, iso2_to_flag_emoji
+from utils.map import render_world_map, get_country_iso2
+from utils.flags import get_flag_badge
 from utils.icons import get_icon
 from utils.fonts import get_default_font_path
 from utils.units import short_label
@@ -31,6 +34,28 @@ def _font(path, size):
         return ImageFont.truetype(path, size)
     except Exception:
         return ImageFont.load_default()
+
+
+def _dashed_line(draw, xy0, xy1, fill, width=2, dash=8, gap=6):
+    """Draw a dashed straight line from xy0 to xy1 (PIL has no native dash support)."""
+    x0, y0 = xy0
+    x1, y1 = xy1
+    length = math.hypot(x1 - x0, y1 - y0)
+    if length == 0:
+        return
+    dx, dy = (x1 - x0) / length, (y1 - y0) / length
+    pos = 0.0
+    drawing = True
+    while pos < length:
+        seg = dash if drawing else gap
+        seg_end = min(pos + seg, length)
+        if drawing:
+            draw.line(
+                [(x0 + dx * pos, y0 + dy * pos), (x0 + dx * seg_end, y0 + dy * seg_end)],
+                fill=fill, width=width,
+            )
+        pos = seg_end
+        drawing = not drawing
 
 
 def render(
@@ -84,7 +109,7 @@ def render(
     )
     canvas.alpha_composite(map_img, (margin, int(map_top)))
 
-    # pin marker + flag badge on the highlighted country
+    # pin marker + circular flag badge (dashed-line callout) on the highlighted country
     if pin_xy:
         px, py = pin_xy
         px += margin
@@ -92,26 +117,58 @@ def render(
         pin_r = int(width * 0.012)
         draw.ellipse([px - pin_r, py - pin_r * 2.4, px + pin_r, py], fill="#E23B3B", outline="#FFFFFF", width=3)
         draw.ellipse([px - pin_r * 0.4, py - pin_r * 1.6, px + pin_r * 0.4, py - pin_r * 0.8], fill="#FFFFFF")
+        pin_top_x, pin_top_y = px, py - pin_r * 2.4
 
-        # flag + country name badge near the pin
+        # circular flag badge, connected to the pin via a dashed line.
+        # Measure the label pill's width up front so the whole badge+label
+        # group can be kept inside the map bounds together (prevents the
+        # pill from being clamped independently and overlapping the badge).
         iso2 = get_country_iso2(country)
-        flag = iso2_to_flag_emoji(iso2) if iso2 else "🏳️"
-        badge_font = _font(font_bold, int(width * 0.016))
+        badge_size = int(width * 0.052)
+        badge_font = _font(font_bold, int(width * 0.017))
         badge_text = f"{country}"
         bb = draw.textbbox((0, 0), badge_text, font=badge_font)
-        badge_w = bb[2] - bb[0] + int(width * 0.05)
-        badge_h = int(height * 0.045)
-        badge_x = min(px + pin_r * 3, width - margin - map_w * 0.05 - badge_w)
-        badge_y = py - badge_h - pin_r * 2
-        draw.rounded_rectangle(
-            [badge_x, badge_y, badge_x + badge_w, badge_y + badge_h],
-            radius=int(badge_h * 0.35), fill="#FFFFFF", outline=NAVY, width=2,
+        label_w = bb[2] - bb[0] + int(width * 0.045)
+        label_h = int(height * 0.038)
+        label_gap = int(width * 0.01)
+
+        # Offset is proportional to the MAP's own size (not the full canvas)
+        # and kept small so the badge lands just beside the pin -- a large
+        # offset can overshoot a compact country/continent (e.g. South
+        # America) across open ocean into an unrelated, unhighlighted area.
+        group_w = badge_size + label_gap + label_w
+        map_right_bound = margin + map_w - int(map_w * 0.02)
+        badge_cx = px + int(map_w * 0.075)
+        badge_cx = min(badge_cx, map_right_bound - group_w + badge_size / 2)
+        badge_cx = max(badge_cx, margin + badge_size / 2)
+        badge_cy = pin_top_y - int(map_h * 0.11)
+        badge_cy = max(badge_cy, int(map_top) + badge_size / 2 + int(height * 0.01))
+
+        _dashed_line(draw, (pin_top_x, pin_top_y), (badge_cx, badge_cy), fill="#FFFFFF", width=3, dash=7, gap=5)
+
+        flag_badge = get_flag_badge(country, size=badge_size, border_color="#FFFFFF", border_width=max(3, int(badge_size * 0.045)), iso2=iso2)
+        canvas.alpha_composite(flag_badge, (int(badge_cx - badge_size / 2), int(badge_cy - badge_size / 2)))
+        # thin navy outline ring on top of the white border for definition
+        draw.ellipse(
+            [badge_cx - badge_size / 2, badge_cy - badge_size / 2, badge_cx + badge_size / 2, badge_cy + badge_size / 2],
+            outline=NAVY, width=2,
         )
-        small_label_font = _font(font_medium, int(width * 0.011))
-        draw.text((badge_x + int(width * 0.012), badge_y + int(badge_h * 0.08)),
-                  "Mercado Clave", fill=GREY_TEXT, font=small_label_font)
-        draw.text((badge_x + int(width * 0.012), badge_y + int(badge_h * 0.42)),
-                  badge_text, fill=NAVY, font=badge_font)
+
+        # pill-shaped label box to the right of the flag badge
+        label_x = badge_cx + badge_size / 2 + label_gap
+        label_y = badge_cy - label_h / 2
+
+        connector_x0 = badge_cx + badge_size / 2 - int(width * 0.012)
+        draw.line([(connector_x0, badge_cy), (label_x, badge_cy)], fill=NAVY, width=2)
+        draw.rounded_rectangle(
+            [label_x, label_y, label_x + label_w, label_y + label_h],
+            radius=int(label_h * 0.5), fill="#FFFFFF", outline=NAVY, width=2,
+        )
+        text_pad_x = int(width * 0.016)
+        tbbox = draw.textbbox((0, 0), badge_text, font=badge_font)
+        text_h = tbbox[3] - tbbox[1]
+        text_y = label_y + (label_h - text_h) / 2 - tbbox[1]
+        draw.text((label_x + text_pad_x, text_y), badge_text, fill=NAVY, font=badge_font)
 
     # ---- Right-side stat cards (Base year / Forecast year) ----
     card_x = margin + map_w + int(width * 0.03)

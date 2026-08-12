@@ -9,7 +9,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 
 def _register_font(font_path=None):
@@ -97,6 +97,97 @@ def render_bar_chart(
     return img
 
 
+def _hex_to_rgb(hex_color):
+    hex_color = hex_color.lstrip("#")
+    return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _lerp_color(c0, c1, t):
+    return tuple(int(c0[i] + (c1[i] - c0[i]) * t) for i in range(3))
+
+
+def render_gradient_bar_chart(
+    years,
+    values,
+    width_px=1400,
+    height_px=650,
+    color_top="#0B2F7A",
+    color_bottom="#5FA3E0",
+    axis_label_color="#1A2B4C",
+    font_path=None,
+    year_font_size=None,
+    bar_width_ratio=0.55,
+    corner_radius_ratio=0.10,
+):
+    """
+    Pure-PIL bar chart with vertical-gradient-filled bars (dark at top,
+    lighter at bottom, matching the minimal "Style 2" reference look) and
+    year labels centered below each bar. No axis/gridlines and no per-bar
+    value labels are drawn here -- the caller overlays its own start/end
+    value callouts with connector lines using the returned bar geometry.
+
+    Returns (PIL.Image RGBA, bar_tops) where bar_tops is a list of
+    (x_center, y_top) pixel coordinates -- one per bar, in this image's own
+    local coordinate space -- so the caller can position callouts/connector
+    lines precisely against specific bars (typically the first and last).
+    """
+    top_rgb = _hex_to_rgb(color_top)
+    bottom_rgb = _hex_to_rgb(color_bottom)
+
+    n = len(values)
+    max_val = max(values) if values else 1
+    if max_val <= 0:
+        max_val = 1
+
+    try:
+        year_font = ImageFont.truetype(font_path, year_font_size or max(14, int(width_px / 55))) if font_path else None
+    except Exception:
+        year_font = None
+    if year_font is None:
+        year_font = ImageFont.load_default()
+
+    label_h = year_font.size + int(height_px * 0.035)
+    plot_h = height_px - label_h
+    plot_w = width_px
+
+    canvas = Image.new("RGBA", (width_px, height_px), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas)
+
+    slot_w = plot_w / n
+    bar_w = slot_w * bar_width_ratio
+    bar_tops = []
+
+    for i, (year, val) in enumerate(zip(years, values)):
+        cx = slot_w * i + slot_w / 2
+        bar_h = max(2, (val / max_val) * plot_h * 0.96)
+        x0, x1 = cx - bar_w / 2, cx + bar_w / 2
+        y1 = plot_h
+        y0 = plot_h - bar_h
+        radius = min(bar_w * corner_radius_ratio, bar_h * 0.5, bar_w / 2)
+
+        # vertical gradient fill, row by row, clipped to a rounded-top rect
+        bar_img = Image.new("RGBA", (int(bar_w) + 1, int(bar_h) + 1), (0, 0, 0, 0))
+        bar_draw = ImageDraw.Draw(bar_img)
+        bh = bar_img.height
+        for row in range(bh):
+            t = row / max(1, bh - 1)
+            color = _lerp_color(top_rgb, bottom_rgb, t)
+            bar_draw.line([(0, row), (bar_img.width, row)], fill=color + (255,))
+        mask = Image.new("L", bar_img.size, 0)
+        mask_draw = ImageDraw.Draw(mask)
+        mask_draw.rounded_rectangle([0, 0, bar_img.width - 1, bar_img.height - 1], radius=int(radius), fill=255)
+        canvas.paste(bar_img, (int(x0), int(y0)), mask)
+
+        # year label, centered below the bar
+        year_text = str(year)
+        ybbox = draw.textbbox((0, 0), year_text, font=year_font)
+        yw = ybbox[2] - ybbox[0]
+        draw.text((cx - yw / 2, plot_h + int(height_px * 0.015)), year_text,
+                   fill=axis_label_color, font=year_font)
+
+        bar_tops.append((cx, y0))
+
+    return canvas, bar_tops
 def render_donut_chart(
     labels,
     values=None,

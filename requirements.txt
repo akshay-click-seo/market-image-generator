@@ -2,3 +2,4 @@ streamlit>=1.35
 pillow>=10.0
 matplotlib>=3.8
 numpy>=1.26
+flagpy>=1.0.3

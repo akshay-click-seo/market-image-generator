@@ -8,11 +8,12 @@ sample image 2 (Plant-Based Protein Market in Mexico) layout.
 
 import os
 import sys
+import math
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PIL import Image, ImageDraw, ImageFont
-from utils.chart import render_bar_chart
+from utils.chart import render_gradient_bar_chart
 from utils.backgrounds import render_background
 from utils.map import render_world_map
 from utils.fonts import get_default_font_path
@@ -21,6 +22,8 @@ from utils.numfmt import format_es_number, format_es_percent
 
 
 NAVY = "#0B2F7A"
+BAR_TOP = "#0B2F7A"
+BAR_BOTTOM = "#5FA3E0"
 TEXT_DARK = "#1A2B4C"
 GREY_TEXT = "#5B6B8C"
 
@@ -30,6 +33,22 @@ def _font(path, size):
         return ImageFont.truetype(path, size)
     except Exception:
         return ImageFont.load_default()
+
+
+def _dotted_line(draw, xy0, xy1, fill, width=2, dot_gap=9):
+    """Draw a dotted line from xy0 to xy1 (small round dots at regular
+    intervals), matching the reference callout-to-bar connector style."""
+    x0, y0 = xy0
+    x1, y1 = xy1
+    length = math.hypot(x1 - x0, y1 - y0)
+    if length == 0:
+        return
+    steps = max(1, int(length / dot_gap))
+    for i in range(steps + 1):
+        t = i / steps
+        x, y = x0 + (x1 - x0) * t, y0 + (y1 - y0) * t
+        r = width / 2
+        draw.ellipse([x - r, y - r, x + r, y + r], fill=fill)
 
 
 def render(
@@ -102,7 +121,8 @@ def render(
     draw.text((card_x + card_w * 0.08, card_y + card_h * 0.78),
               f"({base_year + 1}-{forecast_year})", fill=GREY_TEXT, font=period_font)
 
-    # ---- Start / End value callouts (placed below the card/map row) ----
+    # ---- Start / End value callouts (placed above the chart, connected to
+    # the first/last bar with a dotted line) ----
     callout_font_val = _font(font_bold, int(width * 0.02))
     callout_font_label = _font(font_medium, int(width * 0.012))
 
@@ -111,36 +131,41 @@ def render(
     unit_word = short_label(unit)
 
     callout_y = int(height * 0.40)
+    callout_text_h = callout_font_val.size + callout_font_label.size + 8
 
-    # ---- Bar chart (bottom, full width) ----
+    # ---- Bar chart (bottom, full width), gradient-filled bars ----
     chart_w = int(width * 0.9)
     chart_x = margin
-    chart_top = callout_y + int(height * 0.075)
+    chart_top = callout_y + callout_text_h + int(height * 0.05)
     chart_h = int(height * 0.98) - chart_top - int(height * 0.06)
-    value_decimals = 2 if max(values) < 1000 else 0
-    bar_img = render_bar_chart(
+    bar_img, bar_tops = render_gradient_bar_chart(
         years, values,
         width_px=chart_w, height_px=chart_h,
-        bar_color=NAVY, label_color=NAVY, axis_color=TEXT_DARK,
-        background="none", font_path=font_bold,
-        y_label="",
-        value_formatter=lambda v: format_es_number(v, value_decimals),
+        color_top=BAR_TOP, color_bottom=BAR_BOTTOM,
+        axis_label_color=TEXT_DARK, font_path=font_bold,
     )
     canvas.alpha_composite(bar_img, (chart_x, chart_top))
 
-    # start value callout, above first bar
-    draw.text((chart_x + int(chart_w * 0.02), callout_y), start_display, fill=NAVY, font=callout_font_val)
-    draw.text((chart_x + int(chart_w * 0.02), callout_y + callout_font_val.size + 4),
-              unit_word, fill=TEXT_DARK, font=callout_font_label)
+    first_bar_x, first_bar_y = bar_tops[0]
+    last_bar_x, last_bar_y = bar_tops[-1]
+    first_bar_x, first_bar_y = chart_x + first_bar_x, chart_top + first_bar_y
+    last_bar_x, last_bar_y = chart_x + last_bar_x, chart_top + last_bar_y
 
-    # end value callout, above last bar
+    # start value callout, above first (shortest) bar, dotted line down to its top
+    start_x = chart_x + int(chart_w * 0.02)
+    draw.text((start_x, callout_y), start_display, fill=NAVY, font=callout_font_val)
+    draw.text((start_x, callout_y + callout_font_val.size + 4), unit_word, fill=TEXT_DARK, font=callout_font_label)
+    _dotted_line(draw, (start_x + 4, callout_y + callout_text_h + 6), (first_bar_x, first_bar_y - 6), fill=NAVY, width=4)
+
+    # end value callout, above last (tallest) bar, dotted line down to its top
     end_bbox = draw.textbbox((0, 0), end_display, font=callout_font_val)
     ew = end_bbox[2] - end_bbox[0]
-    draw.text((chart_x + chart_w - ew - int(chart_w * 0.02), callout_y), end_display, fill=NAVY, font=callout_font_val)
+    end_x = chart_x + chart_w - ew - int(chart_w * 0.02)
+    draw.text((end_x, callout_y), end_display, fill=NAVY, font=callout_font_val)
     unit_bbox = draw.textbbox((0, 0), unit_word, font=callout_font_label)
     uw = unit_bbox[2] - unit_bbox[0]
-    draw.text((chart_x + chart_w - uw - int(chart_w * 0.02), callout_y + callout_font_val.size + 4),
-              unit_word, fill=TEXT_DARK, font=callout_font_label)
+    draw.text((end_x, callout_y + callout_font_val.size + 4), unit_word, fill=TEXT_DARK, font=callout_font_label)
+    _dotted_line(draw, (end_x + ew - 4, callout_y + callout_text_h + 6), (last_bar_x, last_bar_y - 6), fill=NAVY, width=4)
 
     # ---- Footer ----
     footer_font = _font(font_bold, int(width * 0.016))

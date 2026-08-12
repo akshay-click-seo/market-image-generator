@@ -14,6 +14,7 @@ import json
 import os
 import hashlib
 import io
+import unicodedata
 
 import matplotlib
 matplotlib.use("Agg")
@@ -39,10 +40,19 @@ def _load_geojson():
     return _GEOJSON_CACHE
 
 
+def _strip_accents(s):
+    """Normalize accented characters to their plain-ASCII equivalent, e.g.
+    'México' -> 'mexico', so accented user input matches the (unaccented)
+    GeoJSON NAME fields."""
+    normalized = unicodedata.normalize("NFKD", s)
+    return "".join(c for c in normalized if not unicodedata.combining(c))
+
+
 def find_country_feature(country_name_or_iso):
-    """Find a country's GeoJSON feature by name, ISO_A2 or ISO_A3 code (case-insensitive)."""
+    """Find a country's GeoJSON feature by name, ISO_A2 or ISO_A3 code
+    (case-insensitive, accent-insensitive)."""
     data = _load_geojson()
-    q = country_name_or_iso.strip().lower()
+    q = _strip_accents(country_name_or_iso.strip().lower())
     best = None
     for feat in data["features"]:
         p = feat["properties"]
@@ -51,12 +61,17 @@ def find_country_feature(country_name_or_iso):
             p.get("NAME_EN", ""), p.get("BRK_NAME", ""), p.get("SOVEREIGNT", ""),
             p.get("ISO_A2", ""), p.get("ISO_A3", ""), p.get("ISO_A2_EH", ""), p.get("ISO_A3_EH", ""),
         ]
-        candidates = [c.lower() for c in candidates if c]
+        candidates = [_strip_accents(c.lower()) for c in candidates if c]
         if q in candidates:
             return feat
-        # partial fallback
+        # partial fallback -- only for candidates long enough that a
+        # substring match is meaningful (avoids e.g. Colombia's 2-letter
+        # ISO code "CO" false-matching inside an unrelated query like
+        # "mexico", which happens to contain the letters "c" and "o").
         if best is None:
             for c in candidates:
+                if len(c) < 4:
+                    continue
                 if q and (q in c or c in q):
                     best = feat
                     break
@@ -102,15 +117,23 @@ def render_world_map(
     ocean_color="#FFFFFF",
     border_color="#FFFFFF",
     dpi=150,
+    highlight_continent=True,
 ):
     """
     Render a flat world map PNG (PIL.Image, RGBA) with an optional highlighted
     country. Returns (image, pin_xy_px) where pin_xy_px is the pixel location
     (x, y) of the highlighted country's centroid within the returned image,
     or None if no country was highlighted / found.
+
+    When `highlight_continent` is True (default) and a country is found, the
+    entire continent it belongs to is filled with `highlight_color` (matching
+    the reference "Regional Analysis" style, e.g. all of North America shown
+    dark navy when the target country is Mexico) with the target country's
+    pin placed precisely on it. Set False to highlight only the exact
+    country polygon instead.
     """
     cache_key = hashlib.md5(
-        f"{width_px}x{height_px}-{highlight_country}-{base_color}-{highlight_color}-{ocean_color}".encode()
+        f"{width_px}x{height_px}-{highlight_country}-{base_color}-{highlight_color}-{ocean_color}-{highlight_continent}".encode()
     ).hexdigest()
     cache_path = os.path.join(CACHE_DIR, f"{cache_key}.png")
 
@@ -126,13 +149,20 @@ def render_world_map(
     if highlight_country:
         target_feature = find_country_feature(highlight_country)
 
+    target_continent = None
+    if target_feature is not None and highlight_continent:
+        target_continent = target_feature["properties"].get("CONTINENT")
+
     patches = []
     highlight_patches = []
     for feat in data["features"]:
         is_target = target_feature is not None and feat is target_feature
+        is_highlighted = is_target or (
+            target_continent is not None and feat["properties"].get("CONTINENT") == target_continent
+        )
         for ring in _iter_polygons(feat["geometry"]):
             poly = MplPolygon(np.array(ring), closed=True)
-            if is_target:
+            if is_highlighted:
                 highlight_patches.append(poly)
             else:
                 patches.append(poly)
