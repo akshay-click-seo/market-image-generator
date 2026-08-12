@@ -13,7 +13,7 @@ from utils.export import SIZE_PRESETS
 DEFAULTS = {
     "settings_background": "Classic Blue",
     "settings_custom_bg_color": "#DEECFA",
-    "settings_font_name": "Poppins Regular",
+    "settings_font_name": "Calibri Regular",
     "settings_logo_path": None,
     "settings_website": "www.informesdeexpertos.com",
     "settings_size_preset": "1600 x 900 (Widescreen)",

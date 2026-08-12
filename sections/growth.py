@@ -124,8 +124,9 @@ def render_page():
         )
     with col_font:
         fonts = list_available_fonts()
-        font_names = list(fonts.keys()) or ["Poppins Regular"]
-        font_choice = st.selectbox("Font", font_names, index=0)
+        font_names = list(fonts.keys()) or ["Calibri Regular"]
+        default_font_index = font_names.index("Calibri Regular") if "Calibri Regular" in font_names else 0
+        font_choice = st.selectbox("Font", font_names, index=default_font_index)
 
     width, height = get_canvas_size()
 
@@ -135,7 +136,11 @@ def render_page():
         with open(logo_path, "wb") as f:
             f.write(logo_file.getvalue())
 
-    font_bold_path = fonts.get("Poppins Bold", get_default_font_path("Bold"))
+    # Bold weight always follows the same family as the chosen font (so
+    # headings/body text never mix two different typefaces), falling back
+    # to the app-wide default (Calibri) if that family has no bold variant.
+    font_family = font_choice.rsplit(" ", 1)[0] if " " in font_choice else font_choice
+    font_bold_path = fonts.get(f"{font_family} Bold", get_default_font_path("Bold"))
     font_regular_path = fonts.get(font_choice, get_default_font_path("Regular"))
 
     if st.button("🎨 Generar Imagen", type="primary", width='stretch'):

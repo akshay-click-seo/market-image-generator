@@ -76,26 +76,42 @@ def render_bar_chart(
         label_text = value_formatter(v) if value_formatter else value_fmt.format(v)
         ax.text(
             xi, v + max_val * 0.02, label_text,
-            ha="center", va="bottom", fontsize=max(9, int(width_px / 90)),
+            ha="center", va="bottom", fontsize=max(8, int(width_px / 130)),
             fontweight="bold", color=label_color,
         )
 
     ax.set_xticks(x)
-    ax.set_xticklabels([str(y) for y in years], fontsize=max(9, int(width_px / 100)), color=axis_color)
+    # When there isn't enough horizontal room per category (small export
+    # sizes, e.g. 800x350, or many bars), rotate the year labels so they
+    # don't overlap into an unreadable smear.
+    px_per_bar = width_px / max(1, len(x))
+    tick_fontsize = max(7, int(width_px / 100))
+    rotation = 0
+    ha = "center"
+    if px_per_bar < 55:
+        rotation = 45
+        ha = "right"
+        tick_fontsize = max(6, int(tick_fontsize * 0.85))
+    ax.set_xticklabels([str(y) for y in years], fontsize=tick_fontsize, color=axis_color,
+                        rotation=rotation, ha=ha)
     ax.set_ylim(0, max_val * 1.18)
 
-    ax.set_ylabel(y_label, fontsize=max(9, int(width_px / 100)), color=axis_color, fontweight="bold")
-    ax.tick_params(axis="y", labelsize=max(8, int(width_px / 110)), colors=axis_color)
+    ax.set_ylabel(y_label, fontsize=max(8, int(width_px / 110)), color=axis_color, fontweight="bold", labelpad=8)
+    ax.tick_params(axis="y", labelsize=max(7, int(width_px / 120)), colors=axis_color)
     ax.grid(axis="y", color=grid_color, linewidth=1, zorder=0)
     for spine in ["top", "right"]:
         ax.spines[spine].set_visible(False)
     for spine in ["left", "bottom"]:
         ax.spines[spine].set_color(axis_color)
 
-    fig.tight_layout()
-
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, transparent=(background == "none"))
+    # NOTE: deliberately no fig.tight_layout() call here -- combining it
+    # with bbox_inches="tight" on save causes matplotlib to clip rotated
+    # tick labels / the rotated y-axis label at small canvas sizes (the
+    # two layout passes disagree on the true bounding box). bbox_inches
+    # + a generous pad_inches alone reliably keeps everything on-canvas.
+    fig.savefig(buf, format="png", dpi=dpi, transparent=(background == "none"),
+                bbox_inches="tight", pad_inches=0.15)
     plt.close(fig)
     buf.seek(0)
     img = Image.open(buf).convert("RGBA")

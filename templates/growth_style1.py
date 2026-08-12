@@ -77,7 +77,12 @@ def render(
         except Exception:
             pass
 
-    title = f"Tamaño del Mercado de {market_name} y Pronóstico de CAGR ({base_year}–{forecast_year})"
+    # Base title is just the market name; when a specific country/region is
+    # given (i.e. not the generic "Global" default) it's appended as
+    # "... en {country}" instead of showing the CAGR/year-range in the title.
+    title = f"Tamaño del Mercado de {market_name}"
+    if country and country.strip().lower() not in ("", "global"):
+        title += f" en {country.strip()}"
     title_font = _font(font_bold, int(width * 0.021))
     title_max_w = brand_x - margin - int(width * 0.02)
     title_lines = _wrap_text(draw, title, title_font, title_max_w)
@@ -92,7 +97,13 @@ def render(
     # ---- Chart area (left ~72%) ----
     chart_w = int(width * 0.68)
     chart_top = max(int(height * 0.15), underline_y + int(height * 0.04))
-    chart_h = int(height * 0.98) - chart_top - int(height * 0.06)
+    footer_top = height - int(height * 0.075)
+    # Reserve a bit more clearance above the footer -- with bbox_inches="tight"
+    # the chart image's actual rendered height can slightly exceed the
+    # requested height_px (rotated tick labels add extra height), so ask
+    # for less than the full remaining space to keep it from overlapping
+    # the website footer text at small canvas sizes.
+    chart_h = footer_top - chart_top - int(height * 0.07)
     unit_label_full = short_label(unit)
     bar_img = render_bar_chart(
         years, values,
@@ -105,9 +116,11 @@ def render(
     )
     canvas.alpha_composite(bar_img, (margin, chart_top))
 
-    # website footer (left)
+    # website footer (centered, matching the other templates)
     footer_font = _font(font_bold, int(width * 0.017))
-    draw.text((margin, height - int(height * 0.06)), website, fill=NAVY, font=footer_font)
+    fbbox = draw.textbbox((0, 0), website, font=footer_font)
+    fw = fbbox[2] - fbbox[0]
+    draw.text(((width - fw) / 2, footer_top), website, fill=NAVY, font=footer_font)
 
     # ---- Right-side stat card column ----
     card_x = int(width * 0.735)
@@ -191,21 +204,28 @@ def _draw_stat_card(canvas, draw, x, y, w, h, icon_name, lines, big_font, small_
 
     text_x = x + icon_pad + icon_circle_d + int(w * 0.06)
     text_max_w = x + w - int(w * 0.05) - text_x
+    min_font_size = max(7, int(h * 0.09))
 
+    # Resolve each line to (possibly multi-line) wrapped text instead of
+    # truncating with an ellipsis -- long values like "EUR 2.035,0 Millones"
+    # on a narrow card (small export sizes such as 800x350) need to wrap
+    # onto a second line rather than getting cut off.
     resolved = []
     total_text_h = 0
+    line_gap = max(2, int(h * 0.02))
     for text, color, size in lines:
         base_font = big_font if size == "big" else small_font
-        font, text = _shrink_to_fit(draw, text, base_font, font_bold_path, text_max_w)
-        resolved.append((text, color, font, size))
-        total_text_h += font.size + 6
+        font, wrapped_lines = _wrap_to_fit(draw, text, base_font, font_bold_path, text_max_w, min_font_size)
+        resolved.append((wrapped_lines, color, font, size))
+        total_text_h += len(wrapped_lines) * (font.size + line_gap)
     if divider:
         total_text_h += 8
 
-    ty = y + (h - total_text_h) // 2
-    for text, color, font, size in resolved:
-        draw.text((text_x, ty), text, fill=color, font=font)
-        ty += font.size + 6
+    ty = y + max(0, (h - total_text_h) // 2)
+    for wrapped_lines, color, font, size in resolved:
+        for line_text in wrapped_lines:
+            draw.text((text_x, ty), line_text, fill=color, font=font)
+            ty += font.size + line_gap
         if divider and size == "small":
             # thin dotted separator between the small label and the big
             # value below it, matching the reference's CAGR/Period cards
@@ -218,23 +238,51 @@ def _draw_stat_card(canvas, draw, x, y, w, h, icon_name, lines, big_font, small_
             ty += 8
 
 
-def _shrink_to_fit(draw, text, font, font_path, max_w, min_size=11):
-    """Shrink the font size until the text fits max_w; only truncates as a last resort."""
+def _wrap_to_fit(draw, text, font, font_path, max_w, min_size=11, max_lines=2):
+    """Shrink the font size (down to `min_size`) and, if it still doesn't
+    fit on one line, word-wrap onto up to `max_lines` lines. Returns
+    (font, [line1, line2, ...]) -- never truncates with an ellipsis, so
+    small-canvas exports show the full value instead of cut-off text."""
     size = font.size
     current = font
     while size > min_size:
         bbox = draw.textbbox((0, 0), text, font=current)
         if bbox[2] - bbox[0] <= max_w:
-            return current, text
+            return current, [text]
         size -= 1
         current = _font(font_path, size)
-    # last resort: truncate with ellipsis at min size
-    while len(text) > 3:
-        text = text[:-1]
-        bbox = draw.textbbox((0, 0), text + "…", font=current)
-        if bbox[2] - bbox[0] <= max_w:
-            return current, text + "…"
-    return current, text
+
+    # Doesn't fit on one line even at min_size -- word-wrap at min_size.
+    words = text.split(" ")
+    lines = []
+    line = ""
+    for word in words:
+        trial = f"{line} {word}".strip()
+        bbox = draw.textbbox((0, 0), trial, font=current)
+        if bbox[2] - bbox[0] <= max_w or not line:
+            line = trial
+        else:
+            lines.append(line)
+            line = word
+        if len(lines) >= max_lines - 1:
+            break
+    remaining_idx = len(" ".join(lines).split(" ")) if lines else 0
+    if line:
+        lines.append(line)
+    # append any leftover words to the last line (avoid silently dropping
+    # words if wrapping stopped early due to max_lines)
+    consumed = sum(len(l.split(" ")) for l in lines)
+    if consumed < len(words):
+        leftover = " ".join(words[consumed:])
+        lines[-1] = f"{lines[-1]} {leftover}".strip()
+        # re-shrink the last line's font if the merged leftover overflows
+        while size > min_size - 4:
+            bbox = draw.textbbox((0, 0), lines[-1], font=current)
+            if bbox[2] - bbox[0] <= max_w:
+                break
+            size -= 1
+            current = _font(font_path, size)
+    return current, lines[:max_lines]
 
 
 def _wrap_text(draw, text, font, max_w):

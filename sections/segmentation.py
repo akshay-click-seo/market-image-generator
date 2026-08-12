@@ -92,8 +92,8 @@ def render_page():
 
     background = st.selectbox("Background", ["Gradient", "Classic Blue", "Modern White", "Light", "Dark"])
     fonts = list_available_fonts()
-    font_bold_path = fonts.get("Poppins Bold", get_default_font_path("Bold"))
-    font_regular_path = fonts.get("Poppins Regular", get_default_font_path("Regular"))
+    font_bold_path = fonts.get("Calibri Bold", get_default_font_path("Bold"))
+    font_regular_path = fonts.get("Calibri Regular", get_default_font_path("Regular"))
 
     width, height = get_canvas_size()
 
