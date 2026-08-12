@@ -101,6 +101,7 @@ def render(
         background="none", font_path=font_bold,
         y_label=f"Valor de Mercado en {unit_label_full} de USD",
         value_formatter=lambda v: format_es_number(v, 1),
+        labels_only_ends=True,
     )
     canvas.alpha_composite(bar_img, (margin, chart_top))
 
@@ -112,7 +113,16 @@ def render(
     card_x = int(width * 0.735)
     card_w = width - card_x - margin
     card_gap = int(height * 0.025)
-    card_h = int((height - chart_top - 3 * card_gap) / 4)
+    # Fixed, comfortable card height (not stretched to fill all available
+    # space down to the bottom) -- the column is then vertically centered
+    # within the space between the header and the footer.
+    card_h = int(height * 0.145)
+    column_available_top = chart_top
+    column_available_bottom = height - int(height * 0.09)  # leave room for footer
+    column_h = 4 * card_h + 3 * card_gap
+    column_top = column_available_top + max(
+        0, (column_available_bottom - column_available_top - column_h) // 2
+    )
 
     cagr_display = format_es_percent(cagr, 1)
     end_display = format_es_number(end_value, 1)
@@ -121,8 +131,9 @@ def render(
     cards = [
         {
             "icon": "globe",
-            "lines": [(f"CAGR {forecast_year - 1 if False else base_year+1} – {forecast_year}", GREY_TEXT, "small"),
+            "lines": [(f"CAGR {forecast_year - 1 if False else base_year+1} – {forecast_year}", TEXT_DARK, "small"),
                       (cagr_display, NAVY, "big")],
+            "divider": True,
         },
         {
             "icon": "bar_chart",
@@ -136,33 +147,38 @@ def render(
         },
         {
             "icon": "calendar",
-            "lines": [("Período de Pronóstico", GREY_TEXT, "small"),
+            "lines": [("Período de Pronóstico", TEXT_DARK, "small"),
                       (f"{base_year} – {forecast_year}", NAVY, "big")],
+            "divider": True,
         },
     ]
 
     big_font = _font(font_bold, int(width * 0.021))
     small_font = _font(font_medium, int(width * 0.013))
 
-    y = chart_top
+    # Four separate cards, each its own rounded white box with a navy
+    # border, stacked with a visible gap between them (matching the
+    # reference) -- not one shared container. Vertically centered in the
+    # column instead of stretched to the bottom.
+    y = column_top
     for card in cards:
-        _draw_stat_card(canvas, draw, card_x, y, card_w, card_h, card["icon"], card["lines"], big_font, small_font, font_bold)
+        _draw_stat_card(
+            canvas, draw, card_x, y, card_w, card_h, card["icon"], card["lines"], big_font, small_font, font_bold,
+            divider=card.get("divider", False),
+        )
         y += card_h + card_gap
 
     return canvas.convert("RGB")
 
 
-def _draw_rounded_card(draw, xy, radius, fill=None, outline=None, width=2):
-    draw.rounded_rectangle(xy, radius=radius, fill=fill, outline=outline, width=width)
-
-
-def _draw_stat_card(canvas, draw, x, y, w, h, icon_name, lines, big_font, small_font, font_bold_path):
+def _draw_stat_card(canvas, draw, x, y, w, h, icon_name, lines, big_font, small_font, font_bold_path,
+                     divider=False):
     radius = int(h * 0.18)
-    _draw_rounded_card(draw, [x, y, x + w, y + h], radius, fill=CARD_BG, outline="#DCE6F5", width=2)
+    border_w = max(2, int(h * 0.035))
+    draw.rounded_rectangle([x, y, x + w, y + h], radius=radius, fill=CARD_BG, outline=NAVY, width=border_w)
 
-    icon_size = int(h * 0.55)
-    icon_pad = int(h * 0.22)
     icon_circle_d = int(h * 0.62)
+    icon_pad = int(h * 0.22)
     icon_cx = x + icon_pad + icon_circle_d // 2
     icon_cy = y + h // 2
     draw.ellipse(
@@ -181,13 +197,25 @@ def _draw_stat_card(canvas, draw, x, y, w, h, icon_name, lines, big_font, small_
     for text, color, size in lines:
         base_font = big_font if size == "big" else small_font
         font, text = _shrink_to_fit(draw, text, base_font, font_bold_path, text_max_w)
-        resolved.append((text, color, font))
+        resolved.append((text, color, font, size))
         total_text_h += font.size + 6
+    if divider:
+        total_text_h += 8
 
     ty = y + (h - total_text_h) // 2
-    for text, color, font in resolved:
+    for text, color, font, size in resolved:
         draw.text((text_x, ty), text, fill=color, font=font)
         ty += font.size + 6
+        if divider and size == "small":
+            # thin dotted separator between the small label and the big
+            # value below it, matching the reference's CAGR/Period cards
+            dash_y = ty + 2
+            dash_x = text_x
+            end_x = x + w - int(w * 0.06)
+            while dash_x < end_x:
+                draw.line([(dash_x, dash_y), (min(dash_x + 4, end_x), dash_y)], fill="#B9C6E3", width=2)
+                dash_x += 8
+            ty += 8
 
 
 def _shrink_to_fit(draw, text, font, font_path, max_w, min_size=11):

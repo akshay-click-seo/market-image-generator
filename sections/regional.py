@@ -17,6 +17,7 @@ from utils.export import export_image, file_extension_for
 from utils.fonts import list_available_fonts, get_default_font_path
 from utils.state import init_state, get_canvas_size
 from utils.units import UNIT_LABELS
+from utils.numfmt import es_number_input
 from templates import regional_style
 
 
@@ -47,9 +48,9 @@ def render_page():
 
     c3, c4 = st.columns(2)
     with c3:
-        base_value = st.number_input("Base Value", value=145.0, format="%.2f")
+        base_value = es_number_input(st, "Base Value", value=145.0)
     with c4:
-        forecast_value = st.number_input("Forecast Value", value=223.5, format="%.2f")
+        forecast_value = es_number_input(st, "Forecast Value", value=223.5)
 
     unit = st.selectbox("Unit", UNIT_LABELS, index=UNIT_LABELS.index("Millones"))
 

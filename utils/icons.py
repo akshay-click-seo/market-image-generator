@@ -7,7 +7,9 @@ external icon asset files are required.
 """
 
 import math
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
+
+from utils.fonts import get_default_font_path
 
 
 def _new_icon_canvas(size):
@@ -47,15 +49,45 @@ def icon_bar_chart(size=100, color="#FFFFFF"):
     return img
 
 
-def icon_coins(size=100, color="#FFFFFF"):
+def icon_coins(size=100, color="#FFFFFF", bg_color="#0B2F7A"):
+    """A stack of coins (viewed from the side, like a coin roll) with a
+    small circular '$' badge overlapping at the bottom-right -- matches the
+    reference "Base Value" card icon. `bg_color` is used to draw thin gap
+    lines between the stacked coin discs (this icon is always composited
+    onto a solid-color circle, so the gaps "cut through" to that color)."""
     img = _new_icon_canvas(size)
     d = ImageDraw.Draw(img)
-    r = size * 0.28
-    centers = [(size * 0.38, size * 0.4), (size * 0.62, size * 0.62)]
-    for cx, cy in centers:
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=color, width=max(2, size // 22))
-    cx, cy = centers[-1]
-    d.text((cx - size * 0.06, cy - size * 0.14), "$", fill=color, font=None)
+
+    # coin stack: 3 stacked discs (ellipses), upper-left of the icon
+    stack_cx = size * 0.42
+    stack_w = size * 0.5
+    disc_h = size * 0.22
+    top_y = size * 0.24
+    n_discs = 3
+    for i in range(n_discs):
+        cy = top_y + i * (disc_h * 0.6)
+        d.ellipse([stack_cx - stack_w / 2, cy, stack_cx + stack_w / 2, cy + disc_h],
+                  fill=color)
+    # gap lines to separate each disc visually
+    for i in range(1, n_discs):
+        cy = top_y + i * (disc_h * 0.6)
+        d.line([(stack_cx - stack_w / 2 + size * 0.02, cy), (stack_cx + stack_w / 2 - size * 0.02, cy)],
+               fill=bg_color, width=max(2, int(size * 0.025)))
+
+    # '$' badge, overlapping the bottom-right of the stack
+    badge_r = size * 0.24
+    badge_cx, badge_cy = size * 0.62, size * 0.68
+    d.ellipse([badge_cx - badge_r, badge_cy - badge_r, badge_cx + badge_r, badge_cy + badge_r],
+               fill=bg_color, outline=color, width=max(2, int(size * 0.03)))
+    try:
+        font_path = get_default_font_path("Bold")
+        font = ImageFont.truetype(font_path, int(size * 0.26)) if font_path else ImageFont.load_default()
+    except Exception:
+        font = ImageFont.load_default()
+    text = "$"
+    bbox = d.textbbox((0, 0), text, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    d.text((badge_cx - tw / 2 - bbox[0], badge_cy - th / 2 - bbox[1]), text, fill=color, font=font)
     return img
 
 

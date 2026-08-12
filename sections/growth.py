@@ -19,6 +19,7 @@ from utils.export import export_image, file_extension_for
 from utils.fonts import list_available_fonts, get_default_font_path
 from utils.state import init_state, get_canvas_size
 from utils.units import UNIT_LABELS
+from utils.numfmt import es_number_input
 from templates import growth_style1, growth_style2
 
 
@@ -71,9 +72,9 @@ def render_page():
         unit_index = UNIT_LABELS.index(default_unit) if default_unit in UNIT_LABELS else UNIT_LABELS.index("Millones")
         unit = st.selectbox("Unit", UNIT_LABELS, index=unit_index)
     with c3:
-        start_value = st.number_input("Start Value", value=float(st.session_state.get("growth_start_value", 2.4)), format="%.2f")
-        end_value = st.number_input("End Value", value=float(st.session_state.get("growth_end_value", 29.8)), format="%.2f")
-        cagr_input = st.number_input("CAGR (%)", value=float(st.session_state.get("growth_cagr", 25.8)), format="%.2f")
+        start_value = es_number_input(st, "Start Value", value=float(st.session_state.get("growth_start_value", 2.4)))
+        end_value = es_number_input(st, "End Value", value=float(st.session_state.get("growth_end_value", 29.8)))
+        cagr_input = es_number_input(st, "CAGR (%)", value=float(st.session_state.get("growth_cagr", 25.8)))
 
     col_logo, col_web = st.columns(2)
     with col_logo:

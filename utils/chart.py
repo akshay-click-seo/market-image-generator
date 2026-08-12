@@ -39,6 +39,7 @@ def render_bar_chart(
     dpi=150,
     highlight_last=False,
     highlight_color="#173F99",
+    labels_only_ends=False,
 ):
     """
     Render a bar chart (years on x-axis, values on y-axis) matching the
@@ -65,9 +66,13 @@ def render_bar_chart(
 
     bars = ax.bar(x, values, color=colors, width=0.55, zorder=3)
 
-    # value labels on top of bars
+    # value labels on top of bars -- optionally only on the first and last
+    # bar (matching reference style 2's minimal look) instead of every bar
     max_val = max(values) if values else 1
+    last_idx = len(x) - 1
     for xi, v in zip(x, values):
+        if labels_only_ends and xi not in (0, last_idx):
+            continue
         label_text = value_formatter(v) if value_formatter else value_fmt.format(v)
         ax.text(
             xi, v + max_val * 0.02, label_text,
