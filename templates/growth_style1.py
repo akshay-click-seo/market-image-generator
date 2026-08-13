@@ -130,17 +130,14 @@ def render(
     # space down to the bottom) -- the column is then vertically centered
     # within the space between the header and the footer.
     card_h = int(height * 0.145)
-    column_available_top = chart_top
-    column_available_bottom = height - int(height * 0.09)  # leave room for footer
-    column_h = 4 * card_h + 3 * card_gap
-    column_top = column_available_top + max(
-        0, (column_available_bottom - column_available_top - column_h) // 2
-    )
 
     cagr_display = format_es_percent(cagr, 1)
     end_display = format_es_number(end_value, 1)
     start_display = format_es_number(start_value, 1)
 
+    # Three stat cards -- CAGR, ending market size, starting market size.
+    # The "Período de Pronóstico" (forecast period) card was removed per
+    # request; the same date range is still shown in the chart title.
     cards = [
         {
             "icon": "globe",
@@ -158,21 +155,22 @@ def render(
             "lines": [(f"{currency} {start_display} {unit_label_full}", NAVY, "big"),
                       (f"Tamaño del Mercado, {base_year}", GREY_TEXT, "small")],
         },
-        {
-            "icon": "calendar",
-            "lines": [("Período de Pronóstico", TEXT_DARK, "small"),
-                      (f"{base_year} – {forecast_year}", NAVY, "big")],
-            "divider": True,
-        },
     ]
+
+    column_available_top = chart_top
+    column_available_bottom = height - int(height * 0.09)  # leave room for footer
+    column_h = len(cards) * card_h + (len(cards) - 1) * card_gap
+    column_top = column_available_top + max(
+        0, (column_available_bottom - column_available_top - column_h) // 2
+    )
 
     big_font = _font(font_bold, int(width * 0.021))
     small_font = _font(font_medium, int(width * 0.013))
 
-    # Four separate cards, each its own rounded white box with a navy
-    # border, stacked with a visible gap between them (matching the
-    # reference) -- not one shared container. Vertically centered in the
-    # column instead of stretched to the bottom.
+    # Separate cards, each its own rounded white box with a navy border,
+    # stacked with a visible gap between them (matching the reference) --
+    # not one shared container. Vertically centered in the column instead
+    # of stretched to the bottom.
     y = column_top
     for card in cards:
         _draw_stat_card(

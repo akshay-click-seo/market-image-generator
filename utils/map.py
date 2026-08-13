@@ -200,6 +200,83 @@ def render_world_map(
     return img, pin_xy
 
 
+def render_dotted_world_map(
+    width_px=1200,
+    height_px=800,
+    dot_color="#C7D8F2",
+    ocean_color=(0, 0, 0, 0),
+    dpi=150,
+    dot_spacing=7,
+    dot_radius=1.3,
+):
+    """
+    Render a world map as a subtle stippled/dotted silhouette (dots arranged
+    in the shape of each landmass, no solid fills or borders) -- matches the
+    "Market Growth Style 2" background watermark spec: a very low-opacity
+    dotted world map behind the chart. This is intentionally a separate
+    function from render_world_map (which does solid country/continent
+    fills for Regional Analysis) so that template is unaffected.
+
+    Implementation: rasterize the solid land silhouette at high resolution
+    to use purely as an alpha mask, then sample that mask on a regular grid
+    and draw a small dot at every grid point that falls on land -- a classic
+    halftone/stipple technique.
+    """
+    data = _load_geojson()
+
+    # Render the solid silhouette larger than the target size (supersampled)
+    # so the land/ocean mask has enough resolution to sample a fine dot grid
+    # against, then we throw away the solid image itself.
+    ss = 2
+    mask_w, mask_h = width_px * ss, height_px * ss
+    fig_w, fig_h = mask_w / dpi, mask_h / dpi
+    fig = plt.figure(figsize=(fig_w, fig_h), dpi=dpi)
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_facecolor((0, 0, 0, 0))
+    fig.patch.set_facecolor((0, 0, 0, 0))
+
+    patches = []
+    for feat in data["features"]:
+        for ring in _iter_polygons(feat["geometry"]):
+            patches.append(MplPolygon(np.array(ring), closed=True))
+    ax.add_collection(PatchCollection(patches, facecolor="#000000", edgecolor="none"))
+
+    ax.set_xlim(-170, 190)
+    ax.set_ylim(-58, 85)
+    ax.set_aspect(1.35)
+    ax.axis("off")
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=dpi, transparent=True)
+    plt.close(fig)
+    buf.seek(0)
+    mask_img = Image.open(buf).convert("RGBA")
+    mask_img = mask_img.resize((mask_w, mask_h), Image.LANCZOS)
+    alpha = mask_img.split()[-1]  # land = opaque, ocean = transparent
+
+    # Build the dotted output by sampling the mask on a regular grid.
+    out = Image.new("RGBA", (width_px, height_px), ocean_color)
+    from PIL import ImageDraw
+    draw = ImageDraw.Draw(out)
+    alpha_px = alpha.load()
+    r = dot_radius
+    y = dot_spacing / 2
+    row = 0
+    while y < height_px:
+        # offset alternating rows for a more natural, less grid-like stipple
+        x_offset = (dot_spacing / 2) if (row % 2) else 0
+        x = x_offset + dot_spacing / 2
+        while x < width_px:
+            mx, my = int(x * ss), int(y * ss)
+            if 0 <= mx < mask_w and 0 <= my < mask_h and alpha_px[mx, my] > 80:
+                draw.ellipse([x - r, y - r, x + r, y + r], fill=dot_color)
+            x += dot_spacing
+        y += dot_spacing
+        row += 1
+
+    return out
+
+
 ISO2_TO_FLAG_EMOJI_BASE = 0x1F1E6
 ISO2_A_ORD = ord('A')
 

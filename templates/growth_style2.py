@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PIL import Image, ImageDraw, ImageFont
 from utils.chart import render_gradient_bar_chart
 from utils.backgrounds import render_background
-from utils.map import render_world_map
+from utils.map import render_dotted_world_map
 from utils.fonts import get_default_font_path
 from utils.units import short_label
 from utils.numfmt import format_es_number, format_es_percent
@@ -78,13 +78,18 @@ def render(
 
     canvas = render_background(background, (width, height)).convert("RGBA")
 
-    # faint world map watermark in the background, top-right area
+    # faint STIPPLED/DOTTED world map watermark in the background, top-right
+    # area (dots forming the landmass silhouettes, not solid fills) --
+    # matches the reference design spec exactly.
     try:
-        map_img, _ = render_world_map(
-            width_px=int(width * 0.6), height_px=int(height * 0.55),
-            base_color="#EDF2FA", ocean_color=(0, 0, 0, 0), border_color="#FFFFFF",
+        map_w, map_h = int(width * 0.62), int(height * 0.56)
+        dot_spacing = max(4, int(width * 0.0055))
+        map_img = render_dotted_world_map(
+            width_px=map_w, height_px=map_h,
+            dot_color="#C7D8F2", ocean_color=(0, 0, 0, 0),
+            dot_spacing=dot_spacing, dot_radius=dot_spacing * 0.16,
         )
-        canvas.alpha_composite(map_img, (int(width * 0.38), int(height * 0.08)))
+        canvas.alpha_composite(map_img, (int(width * 0.36), int(height * 0.06)))
     except Exception:
         pass
 
@@ -151,13 +156,30 @@ def render(
     first_bar_x, first_bar_y = chart_x + first_bar_x, chart_top + first_bar_y
     last_bar_x, last_bar_y = chart_x + last_bar_x, chart_top + last_bar_y
 
-    # start value callout, above first (shortest) bar, dotted line down to its top
-    start_x = chart_x + int(chart_w * 0.02)
-    draw.text((start_x, callout_y), start_display, fill=NAVY, font=callout_font_val)
-    draw.text((start_x, callout_y + callout_font_val.size + 4), unit_word, fill=TEXT_DARK, font=callout_font_label)
-    _dotted_line(draw, (start_x + 4, callout_y + callout_text_h + 6), (first_bar_x, first_bar_y - 6), fill=NAVY, width=4)
+    marker_r = max(3, int(width * 0.0035))
 
-    # end value callout, above last (tallest) bar, dotted line down to its top
+    # start value callout, above first (shortest) bar, dotted line down to
+    # its top, ending in a small solid circular marker at the bar. The
+    # first bar is short, so anchoring this label at the same fixed
+    # callout_y as the end label (which sits right above the tall last
+    # bar) left a long, disproportionate dotted line here -- instead keep
+    # a short, fixed gap between this label and the actual bar top.
+    start_x = chart_x + int(chart_w * 0.02)
+    # Move the label DOWN (larger y) so it sits just above the short first
+    # bar instead of at the same height as the end-of-chart label -- but
+    # never past callout_y (that's still the ceiling other elements, like
+    # the CAGR card, are laid out against).
+    closest_start_callout_y = first_bar_y - callout_text_h - int(height * 0.05)
+    start_callout_y = max(callout_y, closest_start_callout_y)
+    draw.text((start_x, start_callout_y), start_display, fill=NAVY, font=callout_font_val)
+    draw.text((start_x, start_callout_y + callout_font_val.size + 4), unit_word, fill=TEXT_DARK, font=callout_font_label)
+    start_marker_xy = (first_bar_x, first_bar_y - 6)
+    _dotted_line(draw, (start_x + 4, start_callout_y + callout_text_h + 6), start_marker_xy, fill=NAVY, width=4)
+    draw.ellipse([start_marker_xy[0] - marker_r, start_marker_xy[1] - marker_r,
+                  start_marker_xy[0] + marker_r, start_marker_xy[1] + marker_r], fill=NAVY)
+
+    # end value callout, above last (tallest) bar, dotted line down to its
+    # top, ending in a small solid circular marker at the bar
     end_bbox = draw.textbbox((0, 0), end_display, font=callout_font_val)
     ew = end_bbox[2] - end_bbox[0]
     end_x = chart_x + chart_w - ew - int(chart_w * 0.02)
@@ -165,7 +187,10 @@ def render(
     unit_bbox = draw.textbbox((0, 0), unit_word, font=callout_font_label)
     uw = unit_bbox[2] - unit_bbox[0]
     draw.text((end_x, callout_y + callout_font_val.size + 4), unit_word, fill=TEXT_DARK, font=callout_font_label)
-    _dotted_line(draw, (end_x + ew - 4, callout_y + callout_text_h + 6), (last_bar_x, last_bar_y - 6), fill=NAVY, width=4)
+    end_marker_xy = (last_bar_x, last_bar_y - 6)
+    _dotted_line(draw, (end_x + ew - 4, callout_y + callout_text_h + 6), end_marker_xy, fill=NAVY, width=4)
+    draw.ellipse([end_marker_xy[0] - marker_r, end_marker_xy[1] - marker_r,
+                  end_marker_xy[0] + marker_r, end_marker_xy[1] + marker_r], fill=NAVY)
 
     # ---- Footer ----
     footer_font = _font(font_bold, int(width * 0.016))
