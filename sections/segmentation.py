@@ -84,11 +84,9 @@ def render_page():
             labels.append(label)
             colors.append(color)
 
-    col_logo, col_web = st.columns(2)
-    with col_logo:
-        logo_file = st.file_uploader("Logo (optional)", type=["png", "jpg", "jpeg"])
-    with col_web:
-        website = st.text_input("Website", value=st.session_state.get("settings_website", "www.informesdeexpertos.com"))
+    # No logo uploader here -- this template intentionally never shows a
+    # logo (explicitly excluded per request).
+    website = st.text_input("Website", value=st.session_state.get("settings_website", "www.informesdeexpertos.com"))
 
     background = st.selectbox("Background", ["Gradient", "Classic Blue", "Modern White", "Light", "Dark"])
     fonts = list_available_fonts()
@@ -96,12 +94,6 @@ def render_page():
     font_regular_path = fonts.get("Calibri Regular", get_default_font_path("Regular"))
 
     width, height = get_canvas_size()
-
-    logo_path = None
-    if logo_file is not None:
-        logo_path = f"/tmp/_uploaded_logo_{logo_file.name}"
-        with open(logo_path, "wb") as f:
-            f.write(logo_file.getvalue())
 
     # Only keep segments that actually have a non-empty label typed in --
     # the donut renders exactly as many slices as labels provided, not the
@@ -119,7 +111,6 @@ def render_page():
                 segments=final_labels,
                 colors=final_colors,
                 website=website,
-                logo_path=logo_path,
                 background=background,
                 font_regular=font_regular_path,
                 font_bold=font_bold_path,
