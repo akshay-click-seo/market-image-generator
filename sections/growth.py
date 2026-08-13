@@ -88,18 +88,29 @@ def render_page():
     num_years = int(forecast_year) - int(base_year)
     years = list(range(int(base_year), int(forecast_year) + 1))
 
+    # The growth rate that actually drives the bar-by-bar curve: prefer the
+    # CAGR implied by Start Value -> End Value (so intermediate bars always
+    # trace a real growth path between the two numbers the user gave us)
+    # and only fall back to the manually-typed CAGR field when Start/End
+    # don't imply one (e.g. missing or equal values). This prevents the bug
+    # where a stale/zero CAGR field left every middle bar flat at Start
+    # Value while only the last bar jumped to End Value.
+    effective_growth_cagr = compute_cagr(start_value, end_value, num_years)
+    if effective_growth_cagr is None:
+        effective_growth_cagr = cagr_input
+
     if graph_mode == "Auto Calculate Bars using CAGR":
-        values = generate_yearly_values(start_value, cagr_input, num_years)
+        values = generate_yearly_values(start_value, effective_growth_cagr, num_years)
         if values:
             values[-1] = end_value  # ensure the final bar matches the stated end value
     else:
-        default_csv = ", ".join(str(v) for v in generate_yearly_values(start_value, cagr_input, num_years))
+        default_csv = ", ".join(str(v) for v in generate_yearly_values(start_value, effective_growth_cagr, num_years))
         custom_csv = st.text_input(f"Valores anuales separados por coma ({len(years)} años: {years[0]}-{years[-1]})", value=default_csv)
         try:
             values = [float(v.strip()) for v in custom_csv.split(",")]
         except ValueError:
             st.error("No se pudieron interpretar los valores. Usa números separados por coma.")
-            values = generate_yearly_values(start_value, cagr_input, num_years)
+            values = generate_yearly_values(start_value, effective_growth_cagr, num_years)
 
     if len(values) != len(years):
         st.warning(f"Se esperaban {len(years)} valores pero se recibieron {len(values)}. Ajustando automáticamente.")
