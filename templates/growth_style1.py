@@ -132,41 +132,11 @@ def render(
     underline_y = max(ty + int(height * 0.005), margin + int(width * 0.045))
     draw.line([(margin, underline_y), (int(width * 0.62), underline_y)], fill=NAVY, width=3)
 
-    # ---- Chart area (left ~72%) ----
-    chart_w = int(width * 0.68)
-    chart_top = max(int(height * 0.15), underline_y + int(height * 0.04))
-    footer_top = height - int(height * 0.075)
-    # Reserve a bit more clearance above the footer -- with bbox_inches="tight"
-    # the chart image's actual rendered height can slightly exceed the
-    # requested height_px (rotated tick labels add extra height), so ask
-    # for less than the full remaining space to keep it from overlapping
-    # the website footer text at small canvas sizes.
-    chart_h = footer_top - chart_top - int(height * 0.07)
-    unit_label_full = short_label(unit)
-    bar_img = render_bar_chart(
-        years, values,
-        width_px=chart_w, height_px=chart_h,
-        bar_color=NAVY, label_color=NAVY, axis_color=TEXT_DARK,
-        background="none", font_path=font_bold,
-        y_label=f"Valor de Mercado en {unit_label_full} de USD",
-        value_formatter=lambda v: format_es_number(v, 1),
-        labels_only_ends=True,
-    )
-    canvas.alpha_composite(bar_img, (margin, chart_top))
-
-    # website footer (centered, matching the other templates)
-    footer_font = _font(font_bold, int(width * 0.017))
-    fbbox = draw.textbbox((0, 0), website, font=footer_font)
-    fw = fbbox[2] - fbbox[0]
-    draw.text(((width - fw) / 2, footer_top), website, fill=NAVY, font=footer_font)
-
-    # ---- Right-side info panel ----
-    # A tall rounded outer panel with a thick navy border; four separate
-    # white cards are stacked vertically INSIDE it (not floating loose on
-    # the canvas), matching the reference design. (panel_x / panel_w were
-    # already computed above, before the header, so the logo could be
-    # sized to match this same width.)
-    panel_top = chart_top
+    # ---- Right-side info panel geometry (computed before the chart so the
+    # chart's height can be sized to reach down to the panel's actual
+    # bottom edge -- i.e. the x-axis row lines up with the bottom of the
+    # 3rd/last stat card instead of ending well above it). ----
+    panel_top = max(int(height * 0.15), underline_y + int(height * 0.04))
     panel_bottom = height - int(height * 0.09)  # leave room for footer
     panel_pad = int(width * 0.01)
 
@@ -178,6 +148,7 @@ def render(
     cagr_display = format_es_percent(cagr, 1)
     end_display = format_es_number(end_value, 1)
     start_display = format_es_number(start_value, 1)
+    unit_label_full = short_label(unit)
 
     # Three stat cards -- CAGR, ending market size, starting market size --
     # matching the reference layout (the "Período de Pronóstico" 4th card
@@ -205,6 +176,45 @@ def render(
     panel_inner_h = column_h + 2 * panel_pad
     panel_h = min(panel_bottom - panel_top, max(panel_inner_h, int(height * 0.6)))
     panel_y = panel_top + max(0, (panel_bottom - panel_top - panel_h) // 2)
+    panel_bottom_edge = panel_y + panel_h
+
+    # ---- Chart area (left ~72%) ----
+    chart_w = int(width * 0.68)
+    chart_top = panel_top
+    footer_top = height - int(height * 0.075)
+    # Request a height tall enough that, after matplotlib's bbox_inches="tight"
+    # crop (which shrinks the rendered image below the requested height_px --
+    # empirically by roughly 12-15%), the chart's actual composited bottom
+    # edge (x-axis row) lands at the panel's own bottom edge, instead of
+    # ending well above the last stat card. Capped so it still can't overlap
+    # the footer at small canvas sizes.
+    target_bottom = min(panel_bottom_edge, footer_top - int(height * 0.02))
+    chart_h = int((target_bottom - chart_top) * 1.15)
+    chart_h = min(chart_h, footer_top - chart_top - int(height * 0.02))
+    unit_label_full = short_label(unit)
+    bar_img = render_bar_chart(
+        years, values,
+        width_px=chart_w, height_px=chart_h,
+        bar_color=NAVY, label_color=NAVY, axis_color=TEXT_DARK,
+        background="none", font_path=font_bold,
+        y_label=f"Valor de Mercado en {unit_label_full} de USD",
+        value_formatter=lambda v: format_es_number(v, 1),
+        labels_only_ends=True,
+    )
+    canvas.alpha_composite(bar_img, (margin, chart_top))
+
+    # website footer (centered, matching the other templates)
+    footer_font = _font(font_bold, int(width * 0.017))
+    fbbox = draw.textbbox((0, 0), website, font=footer_font)
+    fw = fbbox[2] - fbbox[0]
+    draw.text(((width - fw) / 2, footer_top), website, fill=NAVY, font=footer_font)
+
+    # ---- Right-side info panel ----
+    # A tall rounded outer panel with a thick navy border; four separate
+    # white cards are stacked vertically INSIDE it (not floating loose on
+    # the canvas), matching the reference design. (panel_x / panel_w /
+    # panel_y / panel_h were already computed above, before the chart, so
+    # the chart's height could be matched to the panel's bottom edge.)
 
     # Outer container: white fill, thick navy border, rounded corners.
     outer_border_w = max(3, int(width * 0.0035))
