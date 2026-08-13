@@ -20,6 +20,7 @@ from utils.icons import get_icon
 from utils.fonts import get_default_font_path
 from utils.units import short_label
 from utils.numfmt import format_es_number
+from utils.branding import resolve_logo_path, logo_variant_for_background
 
 
 NAVY = "#0B2F7A"
@@ -202,10 +203,11 @@ def render(
     fw = fbbox[2] - fbbox[0]
     draw.text((center_x - fw / 2, footer_y + int(height * 0.015)), website, fill=NAVY, font=footer_font)
 
-    if logo_path and os.path.exists(logo_path):
+    resolved_logo_path = resolve_logo_path(logo_path, variant=logo_variant_for_background(background))
+    if resolved_logo_path:
         try:
-            logo = Image.open(logo_path).convert("RGBA")
-            logo.thumbnail((int(width * 0.1), int(height * 0.06)))
+            logo = Image.open(resolved_logo_path).convert("RGBA")
+            logo.thumbnail((int(width * 0.1), int(height * 0.06)), Image.LANCZOS)
             canvas.alpha_composite(logo, (width - margin - logo.width, margin // 2))
         except Exception:
             pass

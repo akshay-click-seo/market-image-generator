@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from PIL import Image, ImageDraw, ImageFont
 from utils.backgrounds import render_background
 from utils.fonts import get_default_font_path
+from utils.branding import resolve_logo_path
 
 
 NAVY = "#0B2F7A"
@@ -164,10 +165,14 @@ def render(
     fw = fbbox[2] - fbbox[0]
     draw.text((center_x - fw / 2, footer_y + int(height * 0.012)), footer_text, fill=NAVY, font=footer_font)
 
-    if logo_path and os.path.exists(logo_path):
+    # This template's logo sits on the solid navy title bar, so the
+    # bundled default logo must use its white variant here to stay
+    # readable (a custom user-uploaded logo is used as-is, unchanged).
+    resolved_logo_path = resolve_logo_path(logo_path, variant="white")
+    if resolved_logo_path:
         try:
-            logo = Image.open(logo_path).convert("RGBA")
-            logo.thumbnail((int(width * 0.1), int(title_h * 0.6)))
+            logo = Image.open(resolved_logo_path).convert("RGBA")
+            logo.thumbnail((int(width * 0.1), int(title_h * 0.6)), Image.LANCZOS)
             canvas.alpha_composite(logo, (width - margin - logo.width, int((title_h - logo.height) / 2)))
         except Exception:
             pass

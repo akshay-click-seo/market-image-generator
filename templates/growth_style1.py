@@ -18,6 +18,7 @@ from utils.icons import get_icon
 from utils.fonts import get_default_font_path
 from utils.units import short_label
 from utils.numfmt import format_es_number, format_es_percent
+from utils.branding import resolve_logo_path, logo_variant_for_background
 
 
 NAVY = "#0B2F7A"
@@ -64,18 +65,55 @@ def render(
 
     margin = int(width * 0.03)
 
+    # Right-side info panel's horizontal bounds are needed up front so the
+    # header logo can be sized to span this same width (matched below).
+    panel_x = int(width * 0.735)
+    panel_w = width - panel_x - margin
+
     # ---- Header ----
-    # Reserve top-right space for an optional logo only; no hardcoded brand text.
+    # Top-right: the "Informes de Expertos" logo, resized to span the full
+    # width of the right-side stat panel below it (not just a small
+    # thumbnail), so it visually anchors that column. Uses a custom
+    # uploaded logo image for this specific generation if one was
+    # provided, otherwise falls back to the bundled default logo asset. A
+    # text wordmark is drawn only if no logo image can be loaded at all,
+    # as a last-resort fallback.
     brand_x = width - margin
-    if logo_path and os.path.exists(logo_path):
+    resolved_logo_path = resolve_logo_path(logo_path, variant=logo_variant_for_background(background))
+    logo_drawn = False
+    if resolved_logo_path:
         try:
-            logo = Image.open(logo_path).convert("RGBA")
-            logo.thumbnail((int(width * 0.12), int(height * 0.08)))
+            logo = Image.open(resolved_logo_path).convert("RGBA")
+            max_logo_h = int(height * 0.16)
+            logo_target_w = panel_w
+            scale = logo_target_w / logo.width
+            logo_h = int(logo.height * scale)
+            if logo_h > max_logo_h:
+                scale = max_logo_h / logo.height
+                logo_target_w = int(logo.width * scale)
+                logo_h = max_logo_h
+            logo = logo.resize((logo_target_w, logo_h), Image.LANCZOS)
             logo_x = width - margin - logo.width
-            canvas.alpha_composite(logo, (logo_x, margin + int(height * 0.05)))
+            canvas.alpha_composite(logo, (logo_x, int(height * 0.012)))
             brand_x = logo_x
+            logo_drawn = True
         except Exception:
             pass
+    if not logo_drawn:
+        wordmark_color = "#FFFFFF" if logo_variant_for_background(background) == "white" else "#111111"
+        wordmark_line1 = "informes"
+        wordmark_line2 = "de expertos"
+        wm_font1 = _font(font_bold, int(width * 0.021))
+        wm_font2 = _font(font_bold, int(width * 0.021))
+        b1 = draw.textbbox((0, 0), wordmark_line1, font=wm_font1)
+        b2 = draw.textbbox((0, 0), wordmark_line2, font=wm_font2)
+        w1, w2 = b1[2] - b1[0], b2[2] - b2[0]
+        wm_w = max(w1, w2)
+        wm_x = width - margin - wm_w
+        wm_y = margin + int(height * 0.01)
+        draw.text((wm_x + (wm_w - w1) / 2, wm_y), wordmark_line1, fill=wordmark_color, font=wm_font1)
+        draw.text((wm_x + (wm_w - w2) / 2, wm_y + wm_font1.size + 2), wordmark_line2, fill=wordmark_color, font=wm_font2)
+        brand_x = wm_x
 
     # Base title is just the market name; when a specific country/region is
     # given (i.e. not the generic "Global" default) it's appended as
@@ -122,26 +160,32 @@ def render(
     fw = fbbox[2] - fbbox[0]
     draw.text(((width - fw) / 2, footer_top), website, fill=NAVY, font=footer_font)
 
-    # ---- Right-side stat card column ----
-    card_x = int(width * 0.735)
-    card_w = width - card_x - margin
-    card_gap = int(height * 0.025)
-    # Fixed, comfortable card height (not stretched to fill all available
-    # space down to the bottom) -- the column is then vertically centered
-    # within the space between the header and the footer.
+    # ---- Right-side info panel ----
+    # A tall rounded outer panel with a thick navy border; four separate
+    # white cards are stacked vertically INSIDE it (not floating loose on
+    # the canvas), matching the reference design. (panel_x / panel_w were
+    # already computed above, before the header, so the logo could be
+    # sized to match this same width.)
+    panel_top = chart_top
+    panel_bottom = height - int(height * 0.09)  # leave room for footer
+    panel_pad = int(width * 0.01)
+
+    card_x = panel_x + panel_pad
+    card_w = panel_w - 2 * panel_pad
+    card_gap = int(height * 0.02)
     card_h = int(height * 0.145)
 
     cagr_display = format_es_percent(cagr, 1)
     end_display = format_es_number(end_value, 1)
     start_display = format_es_number(start_value, 1)
 
-    # Three stat cards -- CAGR, ending market size, starting market size.
-    # The "Período de Pronóstico" (forecast period) card was removed per
-    # request; the same date range is still shown in the chart title.
+    # Three stat cards -- CAGR, ending market size, starting market size --
+    # matching the reference layout (the "Período de Pronóstico" 4th card
+    # is intentionally omitted per explicit request).
     cards = [
         {
             "icon": "globe",
-            "lines": [(f"CAGR {forecast_year - 1 if False else base_year+1} – {forecast_year}", TEXT_DARK, "small"),
+            "lines": [(f"CAGR {base_year+1} – {forecast_year}", TEXT_DARK, "small"),
                       (cagr_display, NAVY, "big")],
             "divider": True,
         },
@@ -157,36 +201,66 @@ def render(
         },
     ]
 
-    column_available_top = chart_top
-    column_available_bottom = height - int(height * 0.09)  # leave room for footer
     column_h = len(cards) * card_h + (len(cards) - 1) * card_gap
-    column_top = column_available_top + max(
-        0, (column_available_bottom - column_available_top - column_h) // 2
+    panel_inner_h = column_h + 2 * panel_pad
+    panel_h = min(panel_bottom - panel_top, max(panel_inner_h, int(height * 0.6)))
+    panel_y = panel_top + max(0, (panel_bottom - panel_top - panel_h) // 2)
+
+    # Outer container: white fill, thick navy border, rounded corners.
+    outer_border_w = max(3, int(width * 0.0035))
+    draw.rounded_rectangle(
+        [panel_x, panel_y, panel_x + panel_w, panel_y + panel_h],
+        radius=int(panel_w * 0.06), fill=CARD_BG, outline=NAVY, width=outer_border_w,
     )
+
+    column_top = panel_y + max(panel_pad, (panel_h - column_h) // 2)
 
     big_font = _font(font_bold, int(width * 0.021))
     small_font = _font(font_medium, int(width * 0.013))
 
-    # Separate cards, each its own rounded white box with a navy border,
-    # stacked with a visible gap between them (matching the reference) --
-    # not one shared container. Vertically centered in the column instead
-    # of stretched to the bottom.
+    # The four cards inside the panel use a thin light-blue border (not the
+    # thick navy one) since the outer panel already provides the strong
+    # boundary -- avoids a "double border" look.
     y = column_top
     for card in cards:
         _draw_stat_card(
             canvas, draw, card_x, y, card_w, card_h, card["icon"], card["lines"], big_font, small_font, font_bold,
-            divider=card.get("divider", False),
+            divider=card.get("divider", False), border_color="#DCE6F5", border_w=max(1, int(card_h * 0.02)),
         )
         y += card_h + card_gap
+
+    # ---- Decorative wave shape, bottom-left corner ----
+    _draw_corner_wave(canvas, width, height)
 
     return canvas.convert("RGB")
 
 
+def _draw_corner_wave(canvas, width, height):
+    """Subtle abstract light-blue curved wave shape in the bottom-left
+    corner, purely decorative (matches the reference design)."""
+    wave_w = int(width * 0.22)
+    wave_h = int(height * 0.16)
+    wave_layer = Image.new("RGBA", (wave_w, wave_h), (0, 0, 0, 0))
+    wdraw = ImageDraw.Draw(wave_layer)
+
+    # Two overlapping soft curves, layered light-blue, for a gentle
+    # abstract-wave look without any hard edges.
+    wdraw.ellipse([-wave_w * 0.5, wave_h * 0.25, wave_w * 0.9, wave_h * 2.1],
+                  fill=(179, 209, 240, 90))
+    wdraw.ellipse([-wave_w * 0.65, wave_h * 0.55, wave_w * 0.65, wave_h * 2.1],
+                  fill=(140, 181, 227, 90))
+
+    canvas.alpha_composite(wave_layer, (0, height - wave_h))
+
+
 def _draw_stat_card(canvas, draw, x, y, w, h, icon_name, lines, big_font, small_font, font_bold_path,
-                     divider=False):
+                     divider=False, border_color=None, border_w=None):
     radius = int(h * 0.18)
-    border_w = max(2, int(h * 0.035))
-    draw.rounded_rectangle([x, y, x + w, y + h], radius=radius, fill=CARD_BG, outline=NAVY, width=border_w)
+    if border_color is None:
+        border_color = NAVY
+    if border_w is None:
+        border_w = max(2, int(h * 0.035))
+    draw.rounded_rectangle([x, y, x + w, y + h], radius=radius, fill=CARD_BG, outline=border_color, width=border_w)
 
     icon_circle_d = int(h * 0.62)
     icon_pad = int(h * 0.22)
