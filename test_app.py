@@ -1,8 +1,8 @@
 """
 test_app.py
 Headless smoke tests using Streamlit's AppTest framework: boots the app,
-navigates each page, and clicks the "Generar Imagen" button to confirm
-no exceptions are raised end-to-end.
+navigates each page, and clicks the "Generar Todas las Imágenes" button to
+confirm all 4 templates render end-to-end with no exceptions.
 """
 
 from streamlit.testing.v1 import AppTest
@@ -25,68 +25,34 @@ def test_dashboard():
     return ok
 
 
-def test_growth_page():
+def test_generate_all_page():
     at = AppTest.from_file("app.py")
     at.run(timeout=30)
-    at.sidebar.radio[0].set_value("📈 Market Growth").run(timeout=30)
-    ok1 = not at.exception
-    if not ok1:
-        print("[Growth nav] EXCEPTION:", at.exception)
+    at.sidebar.radio[0].set_value("🎨 Generar Imágenes").run(timeout=30)
+    if at.exception:
+        print("[Generate All nav] EXCEPTION:", at.exception)
         return False
-    print("[Growth nav] OK")
+    print("[Generate All nav] OK")
 
-    # click "Generar Imagen"
-    buttons = [b for b in at.button if "Generar Imagen" in (b.label or "")]
+    buttons = [b for b in at.button if "Generar Todas las Imágenes" in (b.label or "")]
     if not buttons:
-        print("[Growth generate] Button not found")
+        print("[Generate All] Button not found")
         return False
     buttons[0].click().run(timeout=30)
     if at.exception:
-        print("[Growth generate] EXCEPTION:", at.exception)
+        print("[Generate All] EXCEPTION:", at.exception)
         return False
-    print("[Growth generate] OK")
-    return True
+    print("[Generate All] OK")
 
-
-def test_regional_page():
-    at = AppTest.from_file("app.py")
-    at.run(timeout=30)
-    at.sidebar.radio[0].set_value("🗺️ Regional Analysis").run(timeout=30)
-    if at.exception:
-        print("[Regional nav] EXCEPTION:", at.exception)
+    # All 4 images should be present in session state after one click
+    # (the default segment presets are pre-filled, so Segmentation also
+    # has enough segments to render without extra input).
+    expected_keys = ["all_growth1_image", "all_growth2_image", "all_regional_image", "all_seg_image"]
+    missing = [k for k in expected_keys if k not in at.session_state]
+    if missing:
+        print(f"[Generate All] Missing generated images in session_state: {missing}")
         return False
-    print("[Regional nav] OK")
-
-    buttons = [b for b in at.button if "Generar Imagen" in (b.label or "")]
-    if not buttons:
-        print("[Regional generate] Button not found")
-        return False
-    buttons[0].click().run(timeout=30)
-    if at.exception:
-        print("[Regional generate] EXCEPTION:", at.exception)
-        return False
-    print("[Regional generate] OK")
-    return True
-
-
-def test_segmentation_page():
-    at = AppTest.from_file("app.py")
-    at.run(timeout=30)
-    at.sidebar.radio[0].set_value("🍩 Segmentation").run(timeout=30)
-    if at.exception:
-        print("[Segmentation nav] EXCEPTION:", at.exception)
-        return False
-    print("[Segmentation nav] OK")
-
-    buttons = [b for b in at.button if "Generar Imagen" in (b.label or "")]
-    if not buttons:
-        print("[Segmentation generate] Button not found")
-        return False
-    buttons[0].click().run(timeout=30)
-    if at.exception:
-        print("[Segmentation generate] EXCEPTION:", at.exception)
-        return False
-    print("[Segmentation generate] OK")
+    print("[Generate All] All 4 images generated OK")
     return True
 
 
@@ -115,9 +81,7 @@ def test_export_page():
 if __name__ == "__main__":
     results = {
         "dashboard": test_dashboard(),
-        "growth": test_growth_page(),
-        "regional": test_regional_page(),
-        "segmentation": test_segmentation_page(),
+        "generate_all": test_generate_all_page(),
         "settings": test_settings_page(),
         "export": test_export_page(),
     }

@@ -34,7 +34,7 @@ def sidebar_nav():
     st.sidebar.caption("Automatiza tus dashboards de mercado estilo Informes de Expertos")
     page = st.sidebar.radio(
         "Navegación",
-        ["🏠 Dashboard", "📈 Market Growth", "🗺️ Regional Analysis", "🍩 Segmentation", "⚙️ Settings", "📤 Export"],
+        ["🏠 Dashboard", "🎨 Generar Imágenes", "⚙️ Settings", "📤 Export"],
     )
     st.sidebar.divider()
     st.sidebar.caption("v1.0 · Regex-based auto-extraction · Sin dependencias de red")
@@ -46,28 +46,24 @@ def page_dashboard():
     st.write(
         "Bienvenido al **Market Image Generator** — una herramienta para crear imágenes de "
         "reportes de mercado (tamaño de mercado, análisis regional, segmentación) en el "
-        "estilo visual de Informes de Expertos / IMARC."
+        "estilo visual de Informes de Expertos / IMARC. Completa los datos del mercado una "
+        "sola vez y genera las 4 imágenes juntas, en un solo clic."
     )
 
     col1, col2, col3 = st.columns(3)
     with col1:
         st.subheader("📈 Market Growth")
         st.write("Gráfico de barras con CAGR, tarjetas de estadísticas, dos estilos disponibles.")
-        if st.button("Ir a Market Growth →", width='stretch'):
-            st.session_state["_nav_override"] = "📈 Market Growth"
-            st.rerun()
     with col2:
         st.subheader("🗺️ Regional Analysis")
         st.write("Mapa mundial con país destacado automáticamente, bandera y pin.")
-        if st.button("Ir a Regional Analysis →", width='stretch'):
-            st.session_state["_nav_override"] = "🗺️ Regional Analysis"
-            st.rerun()
     with col3:
         st.subheader("🍩 Segmentation")
-        st.write("Gráfico de dona con 2 a 6 segmentos, colores y líneas conectoras automáticas.")
-        if st.button("Ir a Segmentation →", width='stretch'):
-            st.session_state["_nav_override"] = "🍩 Segmentation"
-            st.rerun()
+        st.write("Gráfico de dona con 2 a 8 segmentos, colores y líneas conectoras automáticas.")
+
+    if st.button("🎨 Ir a Generar Todas las Imágenes →", type="primary", width='stretch'):
+        st.session_state["_nav_override"] = "🎨 Generar Imágenes"
+        st.rerun()
 
     st.divider()
     st.subheader("Cómo funciona el Auto Fetch")
@@ -131,18 +127,20 @@ def page_settings():
 
 def page_export():
     st.title("📤 Export")
-    st.write("Exporta la última imagen generada en cualquiera de las páginas (Market Growth, Regional Analysis, Segmentation).")
+    st.write("Exporta cualquiera de las imágenes generadas en '🎨 Generar Imágenes'.")
 
     options = {}
-    if "growth_last_image" in st.session_state:
-        options["Market Growth"] = st.session_state["growth_last_image"]
-    if "regional_last_image" in st.session_state:
-        options["Regional Analysis"] = st.session_state["regional_last_image"]
-    if "seg_last_image" in st.session_state:
-        options["Segmentation"] = st.session_state["seg_last_image"]
+    if "all_growth1_image" in st.session_state:
+        options["Market Growth - Style 1"] = st.session_state["all_growth1_image"]
+    if "all_growth2_image" in st.session_state:
+        options["Market Growth - Style 2"] = st.session_state["all_growth2_image"]
+    if "all_regional_image" in st.session_state:
+        options["Regional Analysis"] = st.session_state["all_regional_image"]
+    if "all_seg_image" in st.session_state:
+        options["Segmentation"] = st.session_state["all_seg_image"]
 
     if not options:
-        st.warning("Aún no has generado ninguna imagen. Ve a una de las páginas de generación primero.")
+        st.warning("Aún no has generado ninguna imagen. Ve a '🎨 Generar Imágenes' primero.")
         return
 
     choice = st.selectbox("Selecciona la imagen a exportar", list(options.keys()))
@@ -170,15 +168,9 @@ def main():
 
     if page == "🏠 Dashboard":
         page_dashboard()
-    elif page == "📈 Market Growth":
-        from sections import growth
-        growth.render_page()
-    elif page == "🗺️ Regional Analysis":
-        from sections import regional
-        regional.render_page()
-    elif page == "🍩 Segmentation":
-        from sections import segmentation
-        segmentation.render_page()
+    elif page == "🎨 Generar Imágenes":
+        from sections import generate_all
+        generate_all.render_page()
     elif page == "⚙️ Settings":
         page_settings()
     elif page == "📤 Export":
