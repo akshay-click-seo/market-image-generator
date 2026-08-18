@@ -28,6 +28,24 @@ def _font(path, size):
         return ImageFont.load_default()
 
 
+def _wrap_text(draw, text, font, max_w):
+    """Word-wrap text to fit within max_w, returning a list of lines."""
+    words = text.split(" ")
+    lines = []
+    current = ""
+    for word in words:
+        trial = f"{current} {word}".strip()
+        bbox = draw.textbbox((0, 0), trial, font=font)
+        if bbox[2] - bbox[0] > max_w and current:
+            lines.append(current)
+            current = word
+        else:
+            current = trial
+    if current:
+        lines.append(current)
+    return lines or [text]
+
+
 def render(
     market_name,
     segments,
@@ -65,17 +83,32 @@ def render(
     center_x = width / 2
 
     # ---- Title bar ----
-    title_h = int(height * 0.11)
-    draw.rectangle([0, 0, width, title_h], fill=NAVY)
+    # No logo on this template, but a very long market name can still still
+    # overflow the canvas edges -- shrink the font first, then wrap onto a
+    # 2nd line as a last resort, growing the navy title bar to fit (which
+    # also pushes the donut chart below it down automatically).
     title_font = _font(font_bold, int(width * 0.028))
     title = f"Segmentación del {market_name}"
+    max_title_w = width * 0.94
     tbbox = draw.textbbox((0, 0), title, font=title_font)
-    tw = tbbox[2] - tbbox[0]
-    if tw > width * 0.94:
+    if tbbox[2] - tbbox[0] > max_title_w:
         title_font = _font(font_bold, int(width * 0.021))
         tbbox = draw.textbbox((0, 0), title, font=title_font)
-        tw = tbbox[2] - tbbox[0]
-    draw.text((center_x - tw / 2, title_h / 2 - title_font.size / 2), title, fill="#FFFFFF", font=title_font)
+    if tbbox[2] - tbbox[0] > max_title_w:
+        title_lines = _wrap_text(draw, title, title_font, max_title_w)
+    else:
+        title_lines = [title]
+
+    line_h = title_font.size + 6
+    base_title_h = int(height * 0.11)
+    title_h = max(base_title_h, int(line_h * len(title_lines) + height * 0.05))
+    draw.rectangle([0, 0, width, title_h], fill=NAVY)
+    ty = (title_h - line_h * len(title_lines)) / 2
+    for line in title_lines:
+        lbbox = draw.textbbox((0, 0), line, font=title_font)
+        lw = lbbox[2] - lbbox[0]
+        draw.text((center_x - lw / 2, ty), line, fill="#FFFFFF", font=title_font)
+        ty += line_h
 
     # ---- Donut chart (center) ----
     donut_d = int(min(width, height - title_h) * 0.42)

@@ -18,7 +18,7 @@ from utils.backgrounds import render_background
 from utils.map import render_dotted_world_map
 from utils.fonts import get_default_font_path
 from utils.units import short_label
-from utils.numfmt import format_es_number, format_es_percent
+from utils.numfmt import format_es_number, format_es_percent, format_money_parts
 from utils.branding import resolve_logo_path, logo_variant_for_background
 
 
@@ -34,6 +34,25 @@ def _font(path, size):
         return ImageFont.truetype(path, size)
     except Exception:
         return ImageFont.load_default()
+
+
+def _wrap_text(draw, text, font, max_w):
+    """Word-wrap text to fit within max_w, returning a list of lines (each
+    line still needs centering by the caller)."""
+    words = text.split(" ")
+    lines = []
+    current = ""
+    for word in words:
+        trial = f"{current} {word}".strip()
+        bbox = draw.textbbox((0, 0), trial, font=font)
+        if bbox[2] - bbox[0] > max_w and current:
+            lines.append(current)
+            current = word
+        else:
+            current = trial
+    if current:
+        lines.append(current)
+    return lines or [text]
 
 
 def _dotted_line(draw, xy0, xy1, fill, width=2, dot_gap=9):
@@ -96,30 +115,68 @@ def render(
 
     draw = ImageDraw.Draw(canvas)
     margin = int(width * 0.03)
+    center_x = width / 2
+
+    # ---- Header logo (top-right) -- placed BEFORE the title so the
+    # title's available width can be computed to avoid overlapping it. ----
+    logo_left_x = width - margin
+    resolved_logo_path = resolve_logo_path(logo_path, variant=logo_variant_for_background(background))
+    if resolved_logo_path:
+        try:
+            logo = Image.open(resolved_logo_path).convert("RGBA")
+            logo.thumbnail((int(width * 0.1), int(height * 0.06)), Image.LANCZOS)
+            logo_x = width - margin - logo.width
+            canvas.alpha_composite(logo, (logo_x, margin // 2))
+            logo_left_x = logo_x
+        except Exception:
+            pass
 
     # ---- Title ----
-    title = f"Tamaño del {market_name}"
+    # Title is centered on the canvas, but a long market name must never be
+    # allowed to run into the logo box on the right (or off the left edge)
+    # -- constrain to a symmetric width around center_x sized by whichever
+    # side is tighter (left margin vs. the logo), shrink the font if it's
+    # still too wide, and finally wrap onto a 2nd line as a last resort.
+    title_text = f"Tamaño del {market_name}"
     title_font = _font(font_bold, int(width * 0.026))
-    center_x = width / 2
-    tbbox = draw.textbbox((0, 0), title, font=title_font)
-    tw = tbbox[2] - tbbox[0]
-    draw.text((center_x - tw / 2, margin * 0.7), title, fill=NAVY, font=title_font)
-    draw.line([(margin, margin * 0.7 + title_font.size + 14), (width - margin, margin * 0.7 + title_font.size + 14)],
-              fill=NAVY, width=2)
+    title_pad = int(width * 0.015)
+    max_title_w = 2 * min(center_x - margin, logo_left_x - title_pad - center_x)
+    tbbox = draw.textbbox((0, 0), title_text, font=title_font)
+    if tbbox[2] - tbbox[0] > max_title_w:
+        title_font = _font(font_bold, int(width * 0.02))
+        tbbox = draw.textbbox((0, 0), title_text, font=title_font)
+    if tbbox[2] - tbbox[0] > max_title_w:
+        title_lines = _wrap_text(draw, title_text, title_font, max_title_w)
+    else:
+        title_lines = [title_text]
 
-    # Subtitle now shows just the currency/unit -- the "Tamaño del Mercado"
-    # wording moved into the main title above it, so repeating it here would
-    # be redundant.
+    ty = margin * 0.7
+    for line in title_lines:
+        lbbox = draw.textbbox((0, 0), line, font=title_font)
+        lw = lbbox[2] - lbbox[0]
+        draw.text((center_x - lw / 2, ty), line, fill=NAVY, font=title_font)
+        ty += title_font.size + int(height * 0.008)
+    underline_y = ty + 6
+    draw.line([(margin, underline_y), (width - margin, underline_y)], fill=NAVY, width=2)
+
+    # Subtitle shows just the currency/unit -- the "Tamaño del Mercado"
+    # wording is already in the main title above it, so repeating it here
+    # would be redundant.
     subtitle_font = _font(font_medium, int(width * 0.015))
-    subtitle = f"{currency} {short_label(unit)}"
+    subtitle = format_money_parts(currency, short_label(unit))
     sbbox = draw.textbbox((0, 0), subtitle, font=subtitle_font)
     sw = sbbox[2] - sbbox[0]
-    draw.text((center_x - sw / 2, margin * 0.7 + title_font.size + 30), subtitle, fill=GREY_TEXT, font=subtitle_font)
+    subtitle_y = underline_y + 16
+    draw.text((center_x - sw / 2, subtitle_y), subtitle, fill=GREY_TEXT, font=subtitle_font)
 
     # ---- CAGR card (top-left) ----
     cagr_display = format_es_percent(cagr, 2)
     card_w, card_h = int(width * 0.24), int(height * 0.16)
-    card_x, card_y = margin, int(height * 0.18)
+    # Normally a fixed fraction of height, but nudged down if a wrapped
+    # (2-line) title pushed the subtitle lower than usual, so the card
+    # never overlaps it.
+    card_y = max(int(height * 0.18), int(subtitle_y + subtitle_font.size + int(height * 0.02)))
+    card_x = margin
     draw.rounded_rectangle([card_x, card_y, card_x + card_w, card_y + card_h],
                             radius=int(card_h * 0.14), outline=NAVY, width=3, fill="#FFFFFF")
     cagr_num_font = _font(font_bold, int(width * 0.032))
@@ -135,8 +192,8 @@ def render(
     callout_font_val = _font(font_bold, int(width * 0.02))
     callout_font_label = _font(font_medium, int(width * 0.012))
 
-    start_display = f"{currency} {format_es_number(start_value, 2)}"
-    end_display = f"{currency} {format_es_number(end_value, 2)}"
+    start_display = format_money_parts(currency, format_es_number(start_value, 2))
+    end_display = format_money_parts(currency, format_es_number(end_value, 2))
     unit_word = short_label(unit)
 
     callout_y = int(height * 0.40)
@@ -203,13 +260,6 @@ def render(
     fw = fbbox[2] - fbbox[0]
     draw.text((center_x - fw / 2, height - int(height * 0.045)), website, fill=NAVY, font=footer_font)
 
-    resolved_logo_path = resolve_logo_path(logo_path, variant=logo_variant_for_background(background))
-    if resolved_logo_path:
-        try:
-            logo = Image.open(resolved_logo_path).convert("RGBA")
-            logo.thumbnail((int(width * 0.1), int(height * 0.06)), Image.LANCZOS)
-            canvas.alpha_composite(logo, (width - margin - logo.width, margin // 2))
-        except Exception:
-            pass
+    # (Logo already drawn in the header, top-right corner -- see above.)
 
     return canvas.convert("RGB")

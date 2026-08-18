@@ -17,7 +17,7 @@ from utils.backgrounds import render_background
 from utils.icons import get_icon
 from utils.fonts import get_default_font_path
 from utils.units import short_label
-from utils.numfmt import format_es_number, format_es_percent
+from utils.numfmt import format_es_number, format_es_percent, format_money_parts, has_currency
 from utils.branding import resolve_logo_path, logo_variant_for_background
 
 
@@ -71,21 +71,23 @@ def render(
     panel_w = width - panel_x - margin
 
     # ---- Header ----
-    # Top-right: the "Informes de Expertos" logo, resized to span the full
-    # width of the right-side stat panel below it (not just a small
-    # thumbnail), so it visually anchors that column. Uses a custom
-    # uploaded logo image for this specific generation if one was
-    # provided, otherwise falls back to the bundled default logo asset. A
-    # text wordmark is drawn only if no logo image can be loaded at all,
-    # as a last-resort fallback.
+    # Top-right: the "Informes de Expertos" logo, sized relative to the
+    # right-side stat panel below it (not spanning its full width -- that
+    # read as oversized -- LOGO_SCALE trims it down while keeping the same
+    # proportions) so it visually anchors that column without dominating
+    # it. Uses a custom uploaded logo image for this specific generation if
+    # one was provided, otherwise falls back to the bundled default logo
+    # asset. A text wordmark is drawn only if no logo image can be loaded
+    # at all, as a last-resort fallback.
+    LOGO_SCALE = 0.72
     brand_x = width - margin
     resolved_logo_path = resolve_logo_path(logo_path, variant=logo_variant_for_background(background))
     logo_drawn = False
     if resolved_logo_path:
         try:
             logo = Image.open(resolved_logo_path).convert("RGBA")
-            max_logo_h = int(height * 0.16)
-            logo_target_w = panel_w
+            max_logo_h = int(height * 0.16 * LOGO_SCALE)
+            logo_target_w = int(panel_w * LOGO_SCALE)
             scale = logo_target_w / logo.width
             logo_h = int(logo.height * scale)
             if logo_h > max_logo_h:
@@ -94,7 +96,7 @@ def render(
                 logo_h = max_logo_h
             logo = logo.resize((logo_target_w, logo_h), Image.LANCZOS)
             logo_x = width - margin - logo.width
-            canvas.alpha_composite(logo, (logo_x, int(height * 0.012)))
+            canvas.alpha_composite(logo, (logo_x, int(height * 0.035)))
             brand_x = logo_x
             logo_drawn = True
         except Exception:
@@ -160,12 +162,12 @@ def render(
         },
         {
             "icon": "bar_chart",
-            "lines": [(f"{currency} {end_display} {unit_label_full}", NAVY, "big"),
+            "lines": [(format_money_parts(currency, end_display, unit_label_full), NAVY, "big"),
                       (f"Tamaño del Mercado, {forecast_year}", GREY_TEXT, "small")],
         },
         {
             "icon": "coins",
-            "lines": [(f"{currency} {start_display} {unit_label_full}", NAVY, "big"),
+            "lines": [(format_money_parts(currency, start_display, unit_label_full), NAVY, "big"),
                       (f"Tamaño del Mercado, {base_year}", GREY_TEXT, "small")],
         },
     ]
@@ -203,12 +205,15 @@ def render(
     chart_h = int((target_bottom - chart_top) * 1.15)
     chart_h = min(chart_h, footer_top - chart_top - int(height * 0.01))
     unit_label_full = short_label(unit)
+    y_label = f"Valor de Mercado en {unit_label_full}"
+    if has_currency(currency):
+        y_label += f" de {currency.strip()}"
     bar_img = render_bar_chart(
         years, values,
         width_px=chart_w, height_px=chart_h,
         bar_color=NAVY, label_color=NAVY, axis_color=TEXT_DARK,
         background="none", font_path=font_bold,
-        y_label=f"Valor de Mercado en {unit_label_full} de USD",
+        y_label=y_label,
         y_label_color=NAVY,
         value_formatter=lambda v: format_es_number(v, 1),
         labels_only_ends=True,

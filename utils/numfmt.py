@@ -42,6 +42,31 @@ def format_es_percent(value, decimals=2):
     return f"{format_es_number(value, decimals)}%"
 
 
+# Sentinel value used by the Currency dropdown's "None" option, for reports
+# whose value has no currency at all (e.g. a quantity in MMT/Toneladas with
+# no price attached).
+NO_CURRENCY = "None"
+
+
+def has_currency(currency):
+    """True if `currency` is a real currency code that should be displayed
+    -- False for the NO_CURRENCY sentinel, empty string, or None."""
+    return bool(currency) and currency.strip().lower() != NO_CURRENCY.lower()
+
+
+def format_money_parts(currency, *parts):
+    """Join a currency code with one or more value/unit strings, e.g.
+    format_money_parts('USD', '29,8', 'Millones') -> 'USD 29,8 Millones'.
+
+    If `currency` is falsy or the NO_CURRENCY sentinel, it's simply
+    omitted -- the literal word "None" must never be rendered on a
+    generated image, only used internally to mean "no currency"."""
+    bits = [p for p in parts if p]
+    if has_currency(currency):
+        bits.insert(0, currency.strip())
+    return " ".join(bits)
+
+
 def parse_es_number(text, default=0.0):
     """Parse a Spanish- or English-formatted number string back to a float.
 

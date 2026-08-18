@@ -135,10 +135,16 @@ def render(
             logo_img = None
 
     # ---- Title ----
+    # Title is centered on the canvas, but must never run into the logo box
+    # in the top-right corner -- constrain to a symmetric width around
+    # center_x sized by whichever side is tighter (left margin vs. the
+    # logo's left edge, brand_x), so a long market name wraps to a 2nd line
+    # instead of overlapping/hiding the logo.
     title_font = _font(font_bold, int(width * 0.028))
     title_text = f"Análisis Regional del {market_name}"
     center_x = width / 2
-    max_title_w = width - 2 * margin
+    title_pad = int(width * 0.015)
+    max_title_w = 2 * min(center_x - margin, brand_x - title_pad - center_x)
     tbbox = draw.textbbox((0, 0), title_text, font=title_font)
     if tbbox[2] - tbbox[0] > max_title_w:
         # shrink first (matches Segmentation's long-title fallback); if

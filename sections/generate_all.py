@@ -34,7 +34,11 @@ COUNTRY_OPTIONS = [
     "Indonesia", "Saudi Arabia", "South Africa", "Argentina", "Nigeria", "Egypt",
 ]
 
-CURRENCY_OPTIONS = ["USD", "EUR", "INR", "GBP", "JPY", "CNY"]
+# "None" is for reports whose value has no currency at all (e.g. a plain
+# quantity in MMT/Toneladas). It's a real option in this dropdown, but the
+# literal word "None" is never rendered onto a generated image -- every
+# template strips it out via utils.numfmt.format_money_parts/has_currency.
+CURRENCY_OPTIONS = ["USD", "EUR", "INR", "GBP", "JPY", "CNY", "None"]
 
 PRESET_SEGMENT_LABELS = [
     "Por Tipo de Producto", "Por Aplicación", "Por Fuente",
@@ -319,7 +323,7 @@ def render_page():
     if any(key in st.session_state for key, *_ in RESULT_SECTIONS):
         st.divider()
         st.subheader("Resultados")
-        name_for_files = market_name.replace(" ", "_")
+        name_for_files = market_name.strip().lower().replace(" ", "_")
         for state_key, title, export_prefix, filename_fn in RESULT_SECTIONS:
             if state_key not in st.session_state:
                 continue
