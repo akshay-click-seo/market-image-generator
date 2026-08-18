@@ -115,12 +115,7 @@ def render(
         draw.text((wm_x + (wm_w - w2) / 2, wm_y + wm_font1.size + 2), wordmark_line2, fill=wordmark_color, font=wm_font2)
         brand_x = wm_x
 
-    # Base title is just the market name; when a specific country/region is
-    # given (i.e. not the generic "Global" default) it's appended as
-    # "... en {country}" instead of showing the CAGR/year-range in the title.
-    title = f"Tamaño del Mercado de {market_name}"
-    if country and country.strip().lower() not in ("", "global"):
-        title += f" en {country.strip()}"
+    title = f"Tamaño del {market_name}"
     title_font = _font(font_bold, int(width * 0.021))
     title_max_w = brand_x - margin - int(width * 0.02)
     title_lines = _wrap_text(draw, title, title_font, title_max_w)

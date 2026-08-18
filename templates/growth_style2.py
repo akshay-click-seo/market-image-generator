@@ -98,7 +98,7 @@ def render(
     margin = int(width * 0.03)
 
     # ---- Title ----
-    title = f"Mercado de {market_name} en {country}"
+    title = f"Tamaño del {market_name}"
     title_font = _font(font_bold, int(width * 0.026))
     center_x = width / 2
     tbbox = draw.textbbox((0, 0), title, font=title_font)
@@ -107,8 +107,11 @@ def render(
     draw.line([(margin, margin * 0.7 + title_font.size + 14), (width - margin, margin * 0.7 + title_font.size + 14)],
               fill=NAVY, width=2)
 
+    # Subtitle now shows just the currency/unit -- the "Tamaño del Mercado"
+    # wording moved into the main title above it, so repeating it here would
+    # be redundant.
     subtitle_font = _font(font_medium, int(width * 0.015))
-    subtitle = f"Tamaño del Mercado ({currency} {short_label(unit)})"
+    subtitle = f"{currency} {short_label(unit)}"
     sbbox = draw.textbbox((0, 0), subtitle, font=subtitle_font)
     sw = sbbox[2] - sbbox[0]
     draw.text((center_x - sw / 2, margin * 0.7 + title_font.size + 30), subtitle, fill=GREY_TEXT, font=subtitle_font)

@@ -37,6 +37,25 @@ def _font(path, size):
         return ImageFont.load_default()
 
 
+def _wrap_text(draw, text, font, max_w):
+    """Word-wrap text to fit within max_w, returning a list of lines (each
+    line's actual pixel width still needs centering by the caller)."""
+    words = text.split(" ")
+    lines = []
+    current = ""
+    for word in words:
+        trial = f"{current} {word}".strip()
+        bbox = draw.textbbox((0, 0), trial, font=font)
+        if bbox[2] - bbox[0] > max_w and current:
+            lines.append(current)
+            current = word
+        else:
+            current = trial
+    if current:
+        lines.append(current)
+    return lines or [text]
+
+
 def _dashed_line(draw, xy0, xy1, fill, width=2, dash=8, gap=6):
     """Draw a dashed straight line from xy0 to xy1 (PIL has no native dash support)."""
     x0, y0 = xy0
@@ -117,8 +136,19 @@ def render(
 
     # ---- Title ----
     title_font = _font(font_bold, int(width * 0.028))
-    title_lines = [f"Análisis Regional del Mercado de", f"{market_name} en {display_country}"]
+    title_text = f"Análisis Regional del {market_name}"
     center_x = width / 2
+    max_title_w = width - 2 * margin
+    tbbox = draw.textbbox((0, 0), title_text, font=title_font)
+    if tbbox[2] - tbbox[0] > max_title_w:
+        # shrink first (matches Segmentation's long-title fallback); if
+        # still too wide even at the smaller size, wrap onto extra lines.
+        title_font = _font(font_bold, int(width * 0.021))
+        tbbox = draw.textbbox((0, 0), title_text, font=title_font)
+    if tbbox[2] - tbbox[0] > max_title_w:
+        title_lines = _wrap_text(draw, title_text, title_font, max_title_w)
+    else:
+        title_lines = [title_text]
     ty = margin * 0.7
     for line in title_lines:
         bbox = draw.textbbox((0, 0), line, font=title_font)

@@ -68,7 +68,7 @@ def render(
     title_h = int(height * 0.11)
     draw.rectangle([0, 0, width, title_h], fill=NAVY)
     title_font = _font(font_bold, int(width * 0.028))
-    title = f"Segmentación del Mercado de {market_name}"
+    title = f"Segmentación del {market_name}"
     tbbox = draw.textbbox((0, 0), title, font=title_font)
     tw = tbbox[2] - tbbox[0]
     if tw > width * 0.94:

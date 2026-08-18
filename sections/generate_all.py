@@ -8,8 +8,10 @@ Segmentation) are generated together, each shown with its own export
 controls right below it.
 """
 
+import io
 import os
 import sys
+import zipfile
 
 import streamlit as st
 
@@ -39,11 +41,17 @@ PRESET_SEGMENT_LABELS = [
     "Por Canal de Distribución", "Por Región", "Por Usuario Final",
 ]
 
+# filename_fn(name_for_files) -> the download filename base (no extension).
+# Growth Style 1 and Style 2 intentionally share the same "cuota-del-..."
+# base name (both are, conceptually, "the graph" image) -- fine for
+# individual downloads (each is its own click), but the Download-All ZIP
+# below numbers them (-1 / -2) if both are selected together so neither
+# silently overwrites the other inside the archive.
 RESULT_SECTIONS = [
-    ("all_growth1_image", "📈 Market Growth — Style 1", "all_g1", "growth_style1"),
-    ("all_growth2_image", "📈 Market Growth — Style 2", "all_g2", "growth_style2"),
-    ("all_regional_image", "🗺️ Regional Analysis", "all_reg", "regional"),
-    ("all_seg_image", "🍩 Segmentation", "all_seg", "segmentation"),
+    ("all_growth1_image", "📈 Market Growth — Style 1", "all_g1", lambda name: f"cuota-del-{name}"),
+    ("all_growth2_image", "📈 Market Growth — Style 2", "all_g2", lambda name: f"cuota-del-{name}"),
+    ("all_regional_image", "🗺️ Regional Analysis", "all_reg", lambda name: f"{name}-region"),
+    ("all_seg_image", "🍩 Segmentation", "all_seg", lambda name: f"{name}-segmento"),
 ]
 
 
@@ -312,12 +320,65 @@ def render_page():
         st.divider()
         st.subheader("Resultados")
         name_for_files = market_name.replace(" ", "_")
-        for state_key, title, export_prefix, filename_prefix in RESULT_SECTIONS:
+        for state_key, title, export_prefix, filename_fn in RESULT_SECTIONS:
             if state_key not in st.session_state:
                 continue
             st.markdown(f"#### {title}")
             st.image(st.session_state[state_key], caption="Vista previa", width='stretch')
-            _export_block(st.session_state[state_key], export_prefix, f"{filename_prefix}_{name_for_files}")
+            _export_block(st.session_state[state_key], export_prefix, filename_fn(name_for_files))
+
+        # ---- Download All (ZIP) ----
+        st.divider()
+        st.subheader("⬇️ Descargar Todo")
+        available = [(k, t, f) for k, t, _, f in RESULT_SECTIONS if k in st.session_state]
+        st.caption(
+            "Selecciona qué imágenes incluir. Si eliges Style 1 y Style 2 juntos, sus archivos "
+            "se numeran (-1 / -2) dentro del ZIP para no sobrescribirse entre sí."
+        )
+        zip_fmt_col, zip_q_col = st.columns([1, 1])
+        with zip_fmt_col:
+            zip_fmt = st.selectbox("Formato", ["PNG", "WEBP", "JPG", "PDF"], index=1, key="all_zip_fmt")
+        with zip_q_col:
+            zip_quality = st.slider("Calidad", 50, 100, 90, key="all_zip_quality")
+
+        selected = []
+        check_cols = st.columns(len(available))
+        for i, (state_key, title, filename_fn) in enumerate(available):
+            with check_cols[i]:
+                if st.checkbox(title, value=True, key=f"all_zip_include_{state_key}"):
+                    selected.append((state_key, filename_fn))
+
+        if selected:
+            # Number filenames that collide (both Growth styles share the
+            # "cuota-del-..." base) instead of silently overwriting one
+            # inside the zip.
+            base_names = [filename_fn(name_for_files) for _, filename_fn in selected]
+            dup_counts = {}
+            for b in base_names:
+                dup_counts[b] = dup_counts.get(b, 0) + 1
+            seen = {}
+            final_names = []
+            for state_key, filename_fn in selected:
+                base = filename_fn(name_for_files)
+                if dup_counts[base] > 1:
+                    seen[base] = seen.get(base, 0) + 1
+                    final_names.append(f"{base}-{seen[base]}")
+                else:
+                    final_names.append(base)
+
+            ext = file_extension_for(zip_fmt)
+            zip_buf = io.BytesIO()
+            with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for (state_key, _), base_name in zip(selected, final_names):
+                    data = export_image(st.session_state[state_key], fmt=zip_fmt, quality=zip_quality)
+                    zf.writestr(f"{base_name}.{ext}", data)
+            st.download_button(
+                "⬇️ Descargar Todo (ZIP)", data=zip_buf.getvalue(),
+                file_name=f"{name_for_files}-imagenes.zip", mime="application/zip",
+                width='stretch', key="all_zip_download_btn", type="primary",
+            )
+        else:
+            st.info("Selecciona al menos una imagen para incluir en el ZIP.")
 
 
 if __name__ == "__main__":
