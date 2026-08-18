@@ -14,7 +14,7 @@ import math
 
 from PIL import Image, ImageDraw, ImageFont
 from utils.backgrounds import render_background
-from utils.map import render_world_map, get_country_iso2
+from utils.map import render_world_map, get_country_iso2, resolve_region
 from utils.flags import get_flag_badge
 from utils.icons import get_icon
 from utils.fonts import get_default_font_path
@@ -85,6 +85,14 @@ def render(
     draw = ImageDraw.Draw(canvas)
     margin = int(width * 0.03)
 
+    # If `country` is actually a market-research region (e.g. "Latinoamérica",
+    # "Latin America", "APAC") rather than a single country, resolve it to its
+    # full member-country list up front -- this drives both the map highlight
+    # below (shading every country in the region, not just showing unhighlighted
+    # free text) and the title/label text (using the canonical display name).
+    region_info = resolve_region(country)
+    display_country = region_info["display"] if region_info else country
+
     # ---- Header: logo (top-right corner) ----
     # Sized/positioned the same way as Growth Style 1's header logo -- top
     # right corner, above the title -- now that the right-side column no
@@ -109,7 +117,7 @@ def render(
 
     # ---- Title ----
     title_font = _font(font_bold, int(width * 0.028))
-    title_lines = [f"Análisis Regional del Mercado de", f"{market_name} en {country}"]
+    title_lines = [f"Análisis Regional del Mercado de", f"{market_name} en {display_country}"]
     center_x = width / 2
     ty = margin * 0.7
     for line in title_lines:
@@ -127,12 +135,20 @@ def render(
     # instead).
     map_w, map_h = int(width * 0.94), int(height * 0.72)
     map_top = line_y + int(height * 0.03)
-    map_img, pin_xy = render_world_map(
-        width_px=map_w, height_px=map_h,
-        highlight_country=country,
-        base_color=MAP_BASE, highlight_color=MAP_HIGHLIGHT,
-        ocean_color=(0, 0, 0, 0), border_color="#FFFFFF",
-    )
+    if region_info:
+        map_img, pin_xy = render_world_map(
+            width_px=map_w, height_px=map_h,
+            highlight_countries=region_info["countries"],
+            base_color=MAP_BASE, highlight_color=MAP_HIGHLIGHT,
+            ocean_color=(0, 0, 0, 0), border_color="#FFFFFF",
+        )
+    else:
+        map_img, pin_xy = render_world_map(
+            width_px=map_w, height_px=map_h,
+            highlight_country=country,
+            base_color=MAP_BASE, highlight_color=MAP_HIGHLIGHT,
+            ocean_color=(0, 0, 0, 0), border_color="#FFFFFF",
+        )
     canvas.alpha_composite(map_img, (margin, int(map_top)))
 
     # pin marker + circular flag badge (dashed-line callout) on the highlighted country
@@ -149,10 +165,10 @@ def render(
         # Measure the label pill's width up front so the whole badge+label
         # group can be kept inside the map bounds together (prevents the
         # pill from being clamped independently and overlapping the badge).
-        iso2 = get_country_iso2(country)
+        iso2 = None if region_info else get_country_iso2(country)
         badge_size = int(width * 0.052)
         badge_font = _font(font_bold, int(width * 0.017))
-        badge_text = f"{country}"
+        badge_text = f"{display_country}"
         bb = draw.textbbox((0, 0), badge_text, font=badge_font)
         label_w = bb[2] - bb[0] + int(width * 0.045)
         label_h = int(height * 0.038)
@@ -172,8 +188,19 @@ def render(
 
         _dashed_line(draw, (pin_top_x, pin_top_y), (badge_cx, badge_cy), fill="#FFFFFF", width=3, dash=7, gap=5)
 
-        flag_badge = get_flag_badge(country, size=badge_size, border_color="#FFFFFF", border_width=max(3, int(badge_size * 0.045)), iso2=iso2)
-        canvas.alpha_composite(flag_badge, (int(badge_cx - badge_size / 2), int(badge_cy - badge_size / 2)))
+        if region_info:
+            # A whole region has no single national flag -- draw a plain
+            # navy circle with a globe icon instead (same visual language as
+            # the stat-card icon circles used elsewhere in the app).
+            draw.ellipse(
+                [badge_cx - badge_size / 2, badge_cy - badge_size / 2, badge_cx + badge_size / 2, badge_cy + badge_size / 2],
+                fill=NAVY, outline="#FFFFFF", width=max(3, int(badge_size * 0.045)),
+            )
+            globe_icon = get_icon("globe", size=int(badge_size * 0.6), color="#FFFFFF")
+            canvas.alpha_composite(globe_icon, (int(badge_cx - globe_icon.width / 2), int(badge_cy - globe_icon.height / 2)))
+        else:
+            flag_badge = get_flag_badge(country, size=badge_size, border_color="#FFFFFF", border_width=max(3, int(badge_size * 0.045)), iso2=iso2)
+            canvas.alpha_composite(flag_badge, (int(badge_cx - badge_size / 2), int(badge_cy - badge_size / 2)))
         # thin navy outline ring on top of the white border for definition
         draw.ellipse(
             [badge_cx - badge_size / 2, badge_cy - badge_size / 2, badge_cx + badge_size / 2, badge_cy + badge_size / 2],

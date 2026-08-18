@@ -90,7 +90,21 @@ def es_number_input(st, label, value, decimals=2, key=None, help=None):
     (e.g. '18,00'); whatever the user types is parsed back to a float via
     `parse_es_number`, tolerating both comma and period input so a user
     who types '18.00' out of habit still works.
+
+    `value` only seeds the FIRST render. If `key` already has a
+    session_state entry (either from a previous render, or because calling
+    code pre-set it -- e.g. an Auto-Fetch feature programmatically
+    overwriting the field), that stored value is used instead and `value`
+    is omitted from the st.text_input call entirely. Passing both
+    unconditionally would still resolve correctly (Streamlit prefers
+    session_state[key]), but it also logs a
+    "widget was created with a default value but also had its value set
+    via the Session State API" warning on every such rerun -- omitting it
+    avoids the warning without changing behavior.
     """
-    default_text = format_es_number(value, decimals)
-    text_value = st.text_input(label, value=default_text, key=key, help=help)
+    if key and key in st.session_state:
+        text_value = st.text_input(label, key=key, help=help)
+    else:
+        default_text = format_es_number(value, decimals)
+        text_value = st.text_input(label, value=default_text, key=key, help=help)
     return parse_es_number(text_value, default=value)

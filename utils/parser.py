@@ -20,6 +20,7 @@ from dataclasses import dataclass, asdict
 from typing import Optional
 
 from utils.units import detect_unit as _detect_unit_from_list, UNIT_DETECT_REGEX
+from utils.numfmt import parse_es_number as _parse_es_number
 
 
 CURRENCY_SYMBOLS = {
@@ -55,23 +56,31 @@ class ExtractedData:
     cagr: Optional[float] = None
     currency: Optional[str] = None
     unit: Optional[str] = None  # "Million" or "Billion" (normalized display unit)
+    market_name: Optional[str] = None
+    region: Optional[str] = None
     raw_text: str = ""
 
     def to_dict(self):
         return asdict(self)
 
 
+_MISSING = object()
+
+
 def _clean_number(s):
-    """Parse a matched numeric string to float. Returns None instead of raising
-    if the match is malformed (e.g. a stray comma with no digits) so a single
-    bad regex match never crashes the whole extraction."""
-    cleaned = s.replace(",", "").strip()
+    """Parse a matched numeric string to float, correctly handling BOTH
+    English (1,234.56) and Spanish (1.234,56 / 0,18) decimal conventions --
+    delegates to the same locale-aware parser used by the manual number
+    input fields, so pasted report text and manually-typed values are
+    interpreted identically. A naive '.replace(",", "")' (the old
+    implementation) corrupted Spanish decimals like "0,18" into "018" (=18)
+    by treating the decimal comma as an English thousands separator.
+    Returns None (never raises) if the match is malformed."""
+    cleaned = s.strip()
     if not cleaned:
         return None
-    try:
-        return float(cleaned)
-    except ValueError:
-        return None
+    result = _parse_es_number(cleaned, default=_MISSING)
+    return None if result is _MISSING else result
 
 
 def _detect_currency(text):
@@ -110,14 +119,30 @@ def extract_from_text(text: str) -> ExtractedData:
     result.currency = currency
     result.unit = unit
 
-    # --- CAGR: "CAGR of 9.74%" / "CAGR del 25.8%" / "growing at a CAGR of X%"
+    # --- Market name + region/country, from a title line like "Mercado
+    # Latinoamericano de Maltodextrina" or "Mercado de Maltodextrina en México"
+    market_name, region = _extract_title_info(t)
+    result.market_name = market_name
+    result.region = region
+
+    # --- CAGR: "CAGR of 9.74%" / "CAGR del 25.8%" / "growing at a CAGR of X%" /
+    # "Tasa de Crecimiento Anual Compuesta (CAGR) de 2026 a 2035: 4,70 %" (the
+    # last form has the forecast-period years sitting BETWEEN "CAGR" and the
+    # value -- tried first since it's more specific; the plain "CAGR ... X%"
+    # patterns below require NO digits in that gap, so they never match the
+    # embedded-years form and are tried only as a fallback).
     cagr_match = re.search(
-        r"CAGR[^%\d]{0,15}?([\d]+(?:[.,]\d+)?)\s*%", t, re.IGNORECASE
+        r"CAGR\)?\s*(?:de|from|durante|during)?\s*20\d{2}\s*(?:[-–—aA]|to)\s*20\d{2}\s*[:\-]?\s*([\d]+(?:[.,]\d+)?)\s*%",
+        t, re.IGNORECASE,
     )
+    if not cagr_match:
+        cagr_match = re.search(
+            r"CAGR[^%\d]{0,15}?([\d]+(?:[.,]\d+)?)\s*%", t, re.IGNORECASE
+        )
     if not cagr_match:
         cagr_match = re.search(r"([\d]+(?:[.,]\d+)?)\s*%\s*CAGR", t, re.IGNORECASE)
     if cagr_match:
-        result.cagr = float(cagr_match.group(1).replace(",", "."))
+        result.cagr = _clean_number(cagr_match.group(1))
 
     # --- Forecast period: "during 2026-2035" / "2025-2036" / "durante el periodo ... 2026 - 2035"
     period_match = re.search(r"(20\d{2})\s*[-–—aA]{1,3}\s*(20\d{2})", t)
@@ -127,27 +152,61 @@ def extract_from_text(text: str) -> ExtractedData:
 
     _unit_group = UNIT_DETECT_REGEX.pattern.strip("()")
 
-    # --- Base year value: "reached USD 145 Million in 2025" / "alcanzo ... USD 2.4 Mil Millones en 2025"
+    # --- Base year value.
+    # Preferred: structured "Tamaño del Mercado en 2025: 0,18 MMT" / "Market
+    # Size in 2025: 0.18 MMT" layout -- the YEAR comes BEFORE the value,
+    # common in bulleted report summaries ("* Tamaño del Mercado en 2025: ...").
+    # Falls back to the older flowing-sentence layout ("... reached USD 145
+    # Million in 2025", value BEFORE the year) if the structured form isn't found.
     base_match = re.search(
-        NUM + r"\s*(" + _unit_group + r"|bn|mn)?\s*(?:.{0,20}?)\b(?:in|en)\s+(20\d{2})",
-        t, re.IGNORECASE
+        r"(?:Tama[ñn]o del Mercado|Market Size)\s*(?:en|in)\s+(20\d{2})\s*[:\-]?\s*"
+        + NUM + r"\s*(" + _unit_group + r"|bn|mn)?",
+        t, re.IGNORECASE,
     )
     if base_match:
-        result.start_value = _clean_number(base_match.group(1))
-        result.base_year = int(base_match.group(3))
-        if base_match.group(2):
-            result.unit = _detect_unit(base_match.group(2))
+        result.start_value = _clean_number(base_match.group(2))
+        result.base_year = int(base_match.group(1))
+        if base_match.group(3):
+            result.unit = _detect_unit(base_match.group(3))
+    else:
+        base_match = re.search(
+            NUM + r"\s*(" + _unit_group + r"|bn|mn)?\s*(?:.{0,20}?)\b(?:in|en)\s+(20\d{2})",
+            t, re.IGNORECASE
+        )
+        if base_match:
+            result.start_value = _clean_number(base_match.group(1))
+            result.base_year = int(base_match.group(3))
+            if base_match.group(2):
+                result.unit = _detect_unit(base_match.group(2))
 
-    # --- End/forecast value: "reach USD 367.3 Million by 2035" / "alcance USD 29.8 Mil Millones para 2036"
+    # --- End/forecast value.
+    # Preferred: structured "Tamaño del Mercado Proyectado en 2035: 0,28 MMT"
+    # layout (year before value; requires a qualifier word like
+    # "Proyectado"/"Projected"/"Estimado" so it targets the SECOND bullet,
+    # not re-matching the same generic "Tamaño del Mercado" phrase the base
+    # value pattern above already consumed). Falls back to the older
+    # flowing-sentence layout ("... reach USD 367.3 Million by 2035").
     end_match = re.search(
-        NUM + r"\s*(" + _unit_group + r"|bn|mn)?\s*(?:.{0,20}?)\b(?:by|para|para el año|hacia)\s+(20\d{2})",
-        t, re.IGNORECASE
+        r"(?:Tama[ñn]o del Mercado (?:Proyectado|Estimado|Pronosticado)|Projected Market Size|"
+        r"Forecast(?:ed)? Market Size|Estimated Market Size)\s*(?:en|in|para|by)\s+(20\d{2})\s*[:\-]?\s*"
+        + NUM + r"\s*(" + _unit_group + r"|bn|mn)?",
+        t, re.IGNORECASE,
     )
     if end_match:
-        result.end_value = _clean_number(end_match.group(1))
-        result.forecast_year = int(end_match.group(3))
-        if end_match.group(2):
-            result.unit = _detect_unit(end_match.group(2))
+        result.end_value = _clean_number(end_match.group(2))
+        result.forecast_year = int(end_match.group(1))
+        if end_match.group(3):
+            result.unit = _detect_unit(end_match.group(3))
+    else:
+        end_match = re.search(
+            NUM + r"\s*(" + _unit_group + r"|bn|mn)?\s*(?:.{0,20}?)\b(?:by|para|para el año|hacia)\s+(20\d{2})",
+            t, re.IGNORECASE
+        )
+        if end_match:
+            result.end_value = _clean_number(end_match.group(1))
+            result.forecast_year = int(end_match.group(3))
+            if end_match.group(2):
+                result.unit = _detect_unit(end_match.group(2))
 
     # --- Fallbacks: if base/end not matched via "in/by" pattern, fall back to first two
     # currency-prefixed numbers found in order of appearance.
@@ -198,6 +257,127 @@ def generate_yearly_values(start_value, cagr_pct, num_years):
     return [round(start_value * ((1 + rate) ** i), 2) for i in range(num_years + 1)]
 
 
+# --- Market name / region extraction -----------------------------------------
+
+# Demonym/adjective AND plain region-noun forms (Spanish + English) ->
+# canonical region display name, for titles like "Mercado Latinoamericano
+# de X" (adjective) or "Latin America X Market" / "Latin American X Market"
+# (noun/adjective, both common in English report titles). Each entry lists
+# its more specific/longer alternatives first so e.g. "asia pacific"
+# matches before the bare "asia" fallback would.
+_REGION_ADJECTIVES = [
+    (r"latinoamericano|latinoamericana|latin\s+american|latin\s+america", "Latinoamérica"),
+    (r"norteamericano|norteamericana|north\s+american|north\s+america", "Norteamérica"),
+    (r"asia[\s-]pac[ií]fico|asia[\s-]pacific", "Asia-Pacífico"),
+    (r"asi[aá]tico|asi[aá]tica|asian|asia", "Asia-Pacífico"),
+    (r"europeo|europea|european|europe", "Europa"),
+    (r"africano|africana|african|africa", "África"),
+    (r"medio\s+oriente|middle\s+eastern|middle\s+east", "Medio Oriente"),
+    (r"mundial|global|worldwide", "Global"),
+]
+
+_NAME_CHARS = r"[\w\sÀ-ÿ\-]"
+
+# Common trailing report-title words ("Maltodextrin Market Size, Share and
+# Growth Report" / "Mercado ... Tamaño y Pronóstico") that a non-greedy
+# capture can otherwise swallow when there's no colon/newline to stop at.
+# Trimming the capture at the first of these keeps just the actual
+# name/region instead of a whole trailing clause.
+_TITLE_STOPWORDS_RE = re.compile(
+    r"\b(?:Size|Share|Growth|Report|Reports|Forecast|Forecasts|Analysis|Trend|Trends|Outlook|"
+    r"Industry|Overview|Statistics|Insights|Research|Study|Segmentation|Regional|Global|"
+    r"Tama[ñn]o|An[aá]lisis|Informe|Pron[oó]stico|Estudio|Segmentaci[oó]n|Tendencias)\b",
+    re.IGNORECASE,
+)
+
+
+def _trim_at_stopword(s):
+    """Cut a captured name/region string at the first trailing report-title
+    stopword (see _TITLE_STOPWORDS_RE), so a non-greedy regex capture that
+    had nowhere else to stop doesn't swallow a whole trailing clause like
+    'Size, Share and Growth Report'."""
+    m = _TITLE_STOPWORDS_RE.search(s)
+    if m:
+        s = s[:m.start()]
+    return s.strip(" ,.-")
+
+
+def _extract_title_info(text):
+    """Best-effort extraction of (market_name, region) from a report title
+    line, e.g. 'Mercado Latinoamericano de Maltodextrina' -> market name
+    'Maltodextrina', region 'Latinoamérica'. Either or both may come back
+    None -- this is opportunistic prefill for an editable field, not a
+    strict parse, so a miss is harmless."""
+    if not text:
+        return None, None
+
+    # Spanish: "Mercado {Adjective} de {Name}" -- region implied by the
+    # adjective itself (no explicit country/region name in the text).
+    for pattern, region in _REGION_ADJECTIVES:
+        m = re.search(
+            r"Mercado\s+(?:" + pattern + r")\s+de\s+(" + _NAME_CHARS + r"{1,60}?)(?:\s*[:：\n]|$)",
+            text, re.IGNORECASE,
+        )
+        if m:
+            name = _trim_at_stopword(m.group(1))
+            if name:
+                return _title_case_label(name), region
+
+    # Spanish: "Mercado de {Name} en {Country}"
+    m = re.search(
+        r"Mercado\s+de\s+(" + _NAME_CHARS + r"{1,60}?)\s+en\s+([A-Za-zÀ-ÿ][\w\sÀ-ÿ\-]{1,40}?)(?:\s*[:：\n]|$)",
+        text, re.IGNORECASE,
+    )
+    if m:
+        name = _trim_at_stopword(m.group(1))
+        country = _trim_at_stopword(m.group(2))
+        if name and country:
+            return _title_case_label(name), _title_case_label(country)
+
+    # Spanish: generic "Mercado de {Name}" (no region/country mentioned)
+    m = re.search(r"Mercado\s+de\s+(" + _NAME_CHARS + r"{1,60}?)(?:\s*[:：\n]|$)", text, re.IGNORECASE)
+    if m:
+        name = _trim_at_stopword(m.group(1))
+        if name:
+            return _title_case_label(name), None
+
+    # English patterns below deliberately do NOT use re.IGNORECASE on the
+    # literal word "Market" (only the region-adjective alternation is
+    # case-folded via the inline (?i:...) group). A capitalized "Market" is
+    # a strong signal of an actual title/proper-noun phrase; matching
+    # lowercase "market" too would false-positive on ordinary descriptive
+    # sentences like "The market reached USD 145 Million in 2025..." --
+    # capturing garbage like "The" as the market name.
+
+    # English: "{Region} {Name} Market" -- region implied by a leading demonym
+    for pattern, region in _REGION_ADJECTIVES:
+        m = re.search(r"\b(?i:" + pattern + r")\s+(" + _NAME_CHARS + r"{1,60}?)\s+Market\b", text)
+        if m:
+            name = _trim_at_stopword(m.group(1))
+            if name:
+                return _title_case_label(name), region
+
+    # English: "{Name} Market in {Country}"
+    m = re.search(
+        r"([A-Za-z0-9][\w\s\-]{1,60}?)\s+Market\s+in\s+([A-Za-z][\w\s\-]{1,40}?)(?:\s*[:：\n]|$)",
+        text,
+    )
+    if m:
+        name = _trim_at_stopword(m.group(1))
+        country = _trim_at_stopword(m.group(2))
+        if name and country:
+            return _title_case_label(name), _title_case_label(country)
+
+    # English: generic "{Name} Market" (no region/country mentioned)
+    m = re.search(r"([A-Za-z0-9][\w\s\-]{1,60}?)\s+Market\b", text)
+    if m:
+        name = _trim_at_stopword(m.group(1))
+        if name:
+            return _title_case_label(name), None
+
+    return None, None
+
+
 # --- Segmentation extraction -------------------------------------------------
 
 # Category headers commonly used to introduce a segmentation dimension in
@@ -224,6 +404,19 @@ _SEGMENT_LIST_INTRO_RE = re.compile(
     r"|segmentars?e\s+(?:en\s+base\s+a|por)"
     r"|segmentad[oa]\s+(?:en\s+base\s+a|por))\s+"
     r"([^.]{3,250})",
+    re.IGNORECASE,
+)
+
+# "... por los Siguientes Segmentos:" / "... by the Following Segments:" --
+# an "Alcance del Informe" (report scope) style introducer where each
+# segment name is listed on its OWN LINE below the colon, rather than as a
+# comma-separated list on the same line, e.g.:
+#   "...Análisis Histórico y Previsiones del Mercado por los Siguientes
+#   Segmentos:
+#   Aplicación
+#   País"
+_SEGMENT_LINES_INTRO_RE = re.compile(
+    r"(?:siguientes\s+segmentos|following\s+segments)\s*[:：]\s*",
     re.IGNORECASE,
 )
 
@@ -255,12 +448,15 @@ def _title_case_label(label):
 def extract_segments_from_text(text, max_segments=8):
     """
     Best-effort extraction of segmentation category names from a pasted
-    report paragraph. Tries two strategies, in order:
+    report paragraph. Tries three strategies, in order:
 
     1. Labeled headers: "By Product Type:", "Por Aplicación:", etc. --
        collects every distinct category header found in the text.
     2. List-style sentence: "The market is segmented based on product type,
        application, source, and region." -- splits the trailing list.
+    3. Line-list under a "Siguientes Segmentos:" / "Following Segments:"
+       introducer -- each segment name on its own line rather than a
+       comma-separated list (common in "Alcance del Informe" scope sections).
 
     Returns a list of segment label strings (may be empty if nothing matched).
     """
@@ -270,10 +466,14 @@ def extract_segments_from_text(text, max_segments=8):
     t = text.strip()
 
     # Strategy 1: labeled headers (works even if headers are scattered
-    # across the paragraph, e.g. multiple "By X:" occurrences).
+    # across the paragraph, e.g. multiple "By X:" occurrences). The
+    # "Siguientes Segmentos:"/"Following Segments:" introducer itself can
+    # incidentally match this pattern too (it's a "por ...:" phrase) --
+    # filtered out here since it's the list's INTRO, not a segment.
     labeled = _LABELED_SEGMENT_RE.findall(t)
     labeled = [_title_case_label(m) for m in labeled]
     labeled = [m for m in labeled if m]
+    labeled = [m for m in labeled if not re.search(r"siguientes\s+segmentos|following\s+segments", m, re.IGNORECASE)]
     if len(labeled) >= 2:
         seen = []
         for label in labeled:
@@ -289,5 +489,30 @@ def extract_segments_from_text(text, max_segments=8):
         items = [i for i in items if i]
         if len(items) >= 2:
             return items[:max_segments]
+
+    # Strategy 3: "... por los Siguientes Segmentos:\nAplicación\nPaís" --
+    # each segment on its own line below the introducer. Stops at the first
+    # blank line (once collection has started), or at a line that looks
+    # like prose/data rather than a short category label (too long,
+    # contains a digit, or contains a colon -- e.g. a following bullet like
+    # "* Tamaño del Mercado en 2025: 0,18 MMT" must not be swept in when
+    # there's no blank line separating the segment list from what follows).
+    lines_match = _SEGMENT_LINES_INTRO_RE.search(t)
+    if lines_match:
+        tail = t[lines_match.end():]
+        candidate_lines = []
+        for raw_line in tail.splitlines():
+            line = raw_line.strip(" -•*\t")
+            if not line:
+                if candidate_lines:
+                    break
+                continue
+            if len(line) > 60 or ":" in line or "：" in line or any(ch.isdigit() for ch in line):
+                break
+            candidate_lines.append(_title_case_label(line))
+            if len(candidate_lines) >= max_segments:
+                break
+        if len(candidate_lines) >= 2:
+            return candidate_lines
 
     return []

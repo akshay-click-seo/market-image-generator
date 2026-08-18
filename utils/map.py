@@ -12,6 +12,7 @@ The rendered map is cached to disk as PNG so repeated exports are fast.
 
 import json
 import os
+import re
 import hashlib
 import io
 import unicodedata
@@ -78,6 +79,105 @@ def find_country_feature(country_name_or_iso):
     return best
 
 
+def _feature_names_by_continent(continent_name):
+    """All country NAME values whose Natural Earth CONTINENT property matches
+    `continent_name` exactly (e.g. 'Europe', 'Africa', 'North America') --
+    used to build a full, accurate country list for continent-aligned market
+    regions instead of a hand-typed (and inevitably incomplete) list."""
+    data = _load_geojson()
+    names = []
+    for feat in data["features"]:
+        if feat["properties"].get("CONTINENT") == continent_name:
+            name = feat["properties"].get("NAME") or feat["properties"].get("ADMIN")
+            if name:
+                names.append(name)
+    return names
+
+
+# Market-research regions that don't correspond to a single country (or a
+# single Natural Earth CONTINENT value) get an explicit, curated country
+# list. Regions that DO line up with a Natural Earth continent (North
+# America, Europe, Africa) instead resolve dynamically via
+# `_feature_names_by_continent()` so every country in that continent is
+# included, not just a hand-picked subset.
+_LATAM_COUNTRIES = [
+    "Mexico", "Guatemala", "Belize", "Honduras", "El Salvador", "Nicaragua",
+    "Costa Rica", "Panama", "Cuba", "Dominican Republic", "Haiti", "Jamaica",
+    "Bahamas", "Trinidad and Tobago", "Colombia", "Venezuela", "Ecuador",
+    "Peru", "Brazil", "Bolivia", "Paraguay", "Chile", "Argentina", "Uruguay",
+    "Guyana", "Suriname",
+]
+
+_MIDDLE_EAST_COUNTRIES = [
+    "Saudi Arabia", "United Arab Emirates", "Qatar", "Kuwait", "Bahrain",
+    "Oman", "Iraq", "Iran", "Israel", "Jordan", "Lebanon", "Syria", "Yemen",
+    "Turkey", "Palestine",
+]
+
+_REGION_DEFS = {
+    "latam": {"display": "Latin America", "countries": _LATAM_COUNTRIES},
+    "namer": {"display": "Norteamérica", "continents": ["North America"]},
+    "europe": {"display": "Europa", "continents": ["Europe"]},
+    "africa": {"display": "África", "continents": ["Africa"]},
+    "mena": {"display": "Medio Oriente", "countries": _MIDDLE_EAST_COUNTRIES},
+    "apac": {"display": "Asia-Pacífico", "continents": ["Asia", "Oceania"]},
+}
+
+# Free-text spellings/synonyms (Spanish and English) a user might type or
+# that the Auto-Fetch parser might extract, normalized (accent-stripped,
+# lowercased, hyphens/underscores collapsed to spaces) -> canonical region key.
+_REGION_ALIASES = {
+    "latinoamerica": "latam", "latino america": "latam", "america latina": "latam",
+    "latin america": "latam", "latin american": "latam", "latam": "latam",
+    "sudamerica": "latam", "south america": "latam", "suramerica": "latam",
+    "sudamerica y centroamerica": "latam", "centroamerica": "latam",
+    "central america": "latam", "america central": "latam",
+
+    "norteamerica": "namer", "north america": "namer", "america del norte": "namer",
+    "america del norte y canada": "namer",
+
+    "europa": "europe", "europe": "europe", "european union": "europe",
+    "union europea": "europe", "ue": "europe", "eu": "europe",
+
+    "africa": "africa",
+
+    "medio oriente": "mena", "oriente medio": "mena", "middle east": "mena",
+    "medio oriente y africa": "mena", "mena": "mena",
+
+    "asia pacifico": "apac", "asia pacifico y oceania": "apac",
+    "asia pacific": "apac", "apac": "apac", "asia": "apac",
+    "asia y oceania": "apac", "asia oceania": "apac",
+}
+
+
+def resolve_region(name):
+    """Try to interpret `name` as a market-research region (e.g.
+    'Latinoamérica', 'Latin America', 'APAC', 'Medio Oriente') rather than a
+    single country. Returns {'display': <canonical Spanish display name>,
+    'countries': [country names]} if recognized, else None.
+
+    Used by templates/regional_style.py to decide whether to highlight an
+    entire region on the map (via `render_world_map(highlight_countries=...)`)
+    instead of a single country -- and to swap the flag-badge callout for a
+    plain text label, since a whole region has no single national flag.
+    """
+    if not name:
+        return None
+    key = _strip_accents(name.strip().lower())
+    key = re.sub(r"[\-_]+", " ", key)
+    key = re.sub(r"\s+", " ", key).strip()
+    region_key = _REGION_ALIASES.get(key)
+    if region_key is None:
+        return None
+    region = _REGION_DEFS[region_key]
+    countries = region.get("countries")
+    if countries is None:
+        countries = []
+        for continent in region.get("continents", []):
+            countries.extend(_feature_names_by_continent(continent))
+    return {"display": region["display"], "countries": countries}
+
+
 def _iter_polygons(geometry):
     """Yield lists of (lon, lat) rings for Polygon / MultiPolygon geometries."""
     gtype = geometry["type"]
@@ -112,6 +212,7 @@ def render_world_map(
     width_px=1200,
     height_px=800,
     highlight_country=None,
+    highlight_countries=None,
     base_color="#AFCBEC",
     highlight_color="#0B2F7A",
     ocean_color="#FFFFFF",
@@ -121,19 +222,28 @@ def render_world_map(
 ):
     """
     Render a flat world map PNG (PIL.Image, RGBA) with an optional highlighted
-    country. Returns (image, pin_xy_px) where pin_xy_px is the pixel location
-    (x, y) of the highlighted country's centroid within the returned image,
-    or None if no country was highlighted / found.
+    country (or countries). Returns (image, pin_xy_px) where pin_xy_px is a
+    representative pixel location (x, y) within the returned image, or None
+    if nothing was highlighted / found.
 
-    When `highlight_continent` is True (default) and a country is found, the
-    entire continent it belongs to is filled with `highlight_color` (matching
-    the reference "Regional Analysis" style, e.g. all of North America shown
-    dark navy when the target country is Mexico) with the target country's
-    pin placed precisely on it. Set False to highlight only the exact
-    country polygon instead.
+    When `highlight_continent` is True (default) and a single `highlight_country`
+    is found, the entire continent it belongs to is filled with
+    `highlight_color` (matching the reference "Regional Analysis" style, e.g.
+    all of North America shown dark navy when the target country is Mexico)
+    with the target country's pin placed precisely on it. Set False to
+    highlight only the exact country polygon instead.
+
+    `highlight_countries` (a list of country names) highlights EVERY matching
+    country instead -- for shading a whole market-research region (e.g. "Latin
+    America" = Mexico + Central/South America) that doesn't correspond to a
+    single country or a single Natural Earth CONTINENT value. Takes priority
+    over `highlight_country`/`highlight_continent` when provided; pin_xy_px is
+    then the mean centroid of all matched countries, a reasonable anchor for a
+    region label callout (there being no single flag for a whole region).
     """
     cache_key = hashlib.md5(
-        f"{width_px}x{height_px}-{highlight_country}-{base_color}-{highlight_color}-{ocean_color}-{highlight_continent}".encode()
+        f"{width_px}x{height_px}-{highlight_country}-{highlight_countries}-"
+        f"{base_color}-{highlight_color}-{ocean_color}-{highlight_continent}".encode()
     ).hexdigest()
     cache_path = os.path.join(CACHE_DIR, f"{cache_key}.png")
 
@@ -146,17 +256,26 @@ def render_world_map(
     fig.patch.set_facecolor(ocean_color)
 
     target_feature = None
-    if highlight_country:
-        target_feature = find_country_feature(highlight_country)
+    region_features = []
+    if highlight_countries:
+        for name in highlight_countries:
+            feat = find_country_feature(name)
+            if feat is not None:
+                region_features.append(feat)
+        target_feature_ids = {id(f) for f in region_features}
+    else:
+        if highlight_country:
+            target_feature = find_country_feature(highlight_country)
+        target_feature_ids = {id(target_feature)} if target_feature is not None else set()
 
     target_continent = None
-    if target_feature is not None and highlight_continent:
+    if not highlight_countries and target_feature is not None and highlight_continent:
         target_continent = target_feature["properties"].get("CONTINENT")
 
     patches = []
     highlight_patches = []
     for feat in data["features"]:
-        is_target = target_feature is not None and feat is target_feature
+        is_target = id(feat) in target_feature_ids
         is_highlighted = is_target or (
             target_continent is not None and feat["properties"].get("CONTINENT") == target_continent
         )
@@ -190,9 +309,17 @@ def render_world_map(
     # entirely (it assumes the data spans edge-to-edge). transData reflects
     # the actual box matplotlib drew into, so it stays correct regardless
     # of how much letterboxing set_aspect introduces.
+    anchor_lonlat = None
+    if highlight_countries:
+        if region_features:
+            lons, lats = zip(*(country_centroid(f) for f in region_features))
+            anchor_lonlat = (sum(lons) / len(lons), sum(lats) / len(lats))
+    elif target_feature is not None:
+        anchor_lonlat = country_centroid(target_feature)
+
     pin_xy_raw = None
-    if target_feature is not None:
-        lon, lat = country_centroid(target_feature)
+    if anchor_lonlat is not None:
+        lon, lat = anchor_lonlat
         fig.canvas.draw()  # ensure the transform reflects final layout
         disp_x, disp_y = ax.transData.transform((lon, lat))
         # transData uses a bottom-left origin; convert to top-left (image/PIL

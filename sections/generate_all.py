@@ -20,7 +20,7 @@ from utils.export import export_image, file_extension_for
 from utils.fonts import list_available_fonts, get_default_font_path
 from utils.state import init_state, get_canvas_size
 from utils.units import UNIT_LABELS
-from utils.numfmt import es_number_input
+from utils.numfmt import es_number_input, format_es_number
 from utils.map import find_country_feature
 from templates import growth_style1, growth_style2, regional_style, segmentation_style
 from templates.segmentation_style import DEFAULT_PALETTE
@@ -31,6 +31,8 @@ COUNTRY_OPTIONS = [
     "France", "Japan", "South Korea", "Canada", "Australia", "Spain", "Italy",
     "Indonesia", "Saudi Arabia", "South Africa", "Argentina", "Nigeria", "Egypt",
 ]
+
+CURRENCY_OPTIONS = ["USD", "EUR", "INR", "GBP", "JPY", "CNY"]
 
 PRESET_SEGMENT_LABELS = [
     "Por Tipo de Producto", "Por Aplicación", "Por Fuente",
@@ -43,6 +45,21 @@ RESULT_SECTIONS = [
     ("all_regional_image", "🗺️ Regional Analysis", "all_reg", "regional"),
     ("all_seg_image", "🍩 Segmentation", "all_seg", "segmentation"),
 ]
+
+
+def _seed(key, default):
+    """Seed a widget's session_state key with a default ONLY if it doesn't
+    already exist -- then the widget is instantiated below using ONLY
+    `key=` (no separate `value=`/`index=`). This is the one pattern that
+    lets code elsewhere (Auto-Fetch) reliably overwrite a field: Streamlit
+    always prefers an existing session_state[key] over a widget's value=/
+    index= argument on every rerun after the first, so a dual-key setup
+    (a widget with `key="x_input"` but a default sourced from a DIFFERENT
+    key "x") silently ignores any later attempt to update it via the wrong
+    key -- Auto-Fetch would compute the right values but never see them
+    reach the page."""
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 
 def _export_block(img, key_prefix, filename_base):
@@ -82,47 +99,64 @@ def render_page():
         )
         if st.button("🔍 Extraer datos", key="all_extract_btn"):
             extracted = extract_from_text(pasted_text)
-            st.session_state["all_start_value"] = extracted.start_value or 0.0
-            st.session_state["all_end_value"] = extracted.end_value or 0.0
-            st.session_state["all_base_year"] = extracted.base_year or 2025
-            st.session_state["all_forecast_year"] = extracted.forecast_year or 2035
-            st.session_state["all_cagr"] = extracted.cagr or 0.0
-            st.session_state["all_currency"] = extracted.currency or "USD"
-            st.session_state["all_unit"] = extracted.unit or "Millones"
+            if extracted.start_value is not None:
+                st.session_state["all_start_value_input"] = format_es_number(extracted.start_value, 2)
+            if extracted.end_value is not None:
+                st.session_state["all_end_value_input"] = format_es_number(extracted.end_value, 2)
+            if extracted.base_year is not None:
+                st.session_state["all_base_year_input"] = int(extracted.base_year)
+            if extracted.forecast_year is not None:
+                st.session_state["all_forecast_year_input"] = int(extracted.forecast_year)
+            if extracted.cagr is not None:
+                st.session_state["all_cagr_input"] = format_es_number(extracted.cagr, 2)
+            if extracted.currency in CURRENCY_OPTIONS:
+                st.session_state["all_currency_select"] = extracted.currency
+            if extracted.unit in UNIT_LABELS:
+                st.session_state["all_unit_select"] = extracted.unit
+            if extracted.market_name:
+                st.session_state["all_market_name_input"] = extracted.market_name
+            if extracted.region:
+                # Free-text override field takes precedence over the fixed
+                # Country dropdown -- lets a broad region like "Latinoamérica"
+                # (not a single country) come through as typed text.
+                st.session_state["all_country_custom"] = extracted.region
+            extras = []
+            if extracted.market_name:
+                extras.append(f"Market: {extracted.market_name}")
+            if extracted.region:
+                extras.append(f"Region: {extracted.region}")
             st.success(
                 f"Extraído: {extracted.currency} {extracted.start_value} ({extracted.base_year}) → "
                 f"{extracted.currency} {extracted.end_value} ({extracted.forecast_year}), "
-                f"CAGR {extracted.cagr}%"
+                f"CAGR {extracted.cagr}%" + (" · " + " · ".join(extras) if extras else "")
             )
+            st.rerun()
 
     st.subheader("Datos del Mercado")
     st.caption("Estos campos alimentan Growth Style 1, Growth Style 2 y Regional Analysis.")
+    _seed("all_market_name_input", "Clonación de Voz")
+    _seed("all_country_select", "Global")
+    _seed("all_country_custom", "")
+    _seed("all_currency_select", "USD")
+    _seed("all_base_year_input", 2025)
+    _seed("all_forecast_year_input", 2035)
+    _seed("all_unit_select", "Millones")
     c1, c2, c3 = st.columns(3)
     with c1:
-        market_name = st.text_input(
-            "Market Name", value=st.session_state.get("all_market_name", "Clonación de Voz"), key="all_market_name_input"
-        )
-        default_country = st.session_state.get("all_country", "Global")
-        country_idx = COUNTRY_OPTIONS.index(default_country) if default_country in COUNTRY_OPTIONS else 0
-        country = st.selectbox("Country", COUNTRY_OPTIONS, index=country_idx, key="all_country_select")
-        custom_country = st.text_input("...o escribe un país personalizado (opcional)", value="", key="all_country_custom")
+        market_name = st.text_input("Market Name", key="all_market_name_input")
+        country = st.selectbox("Country", COUNTRY_OPTIONS, key="all_country_select")
+        custom_country = st.text_input("...o escribe un país personalizado (opcional)", key="all_country_custom")
         if custom_country.strip():
             country = custom_country.strip()
-        currency = st.selectbox(
-            "Currency", ["USD", "EUR", "INR", "GBP", "JPY", "CNY"],
-            index=["USD", "EUR", "INR", "GBP", "JPY", "CNY"].index(st.session_state.get("all_currency", "USD")),
-            key="all_currency_select",
-        )
+        currency = st.selectbox("Currency", CURRENCY_OPTIONS, key="all_currency_select")
     with c2:
-        base_year = st.number_input("Base Year", value=int(st.session_state.get("all_base_year", 2025)), step=1, key="all_base_year_input")
-        forecast_year = st.number_input("Forecast Year", value=int(st.session_state.get("all_forecast_year", 2035)), step=1, key="all_forecast_year_input")
-        default_unit = st.session_state.get("all_unit", "Millones")
-        unit_index = UNIT_LABELS.index(default_unit) if default_unit in UNIT_LABELS else UNIT_LABELS.index("Millones")
-        unit = st.selectbox("Unit", UNIT_LABELS, index=unit_index, key="all_unit_select")
+        base_year = st.number_input("Base Year", step=1, key="all_base_year_input")
+        forecast_year = st.number_input("Forecast Year", step=1, key="all_forecast_year_input")
+        unit = st.selectbox("Unit", UNIT_LABELS, key="all_unit_select")
     with c3:
-        start_value = es_number_input(st, "Start Value", value=float(st.session_state.get("all_start_value", 2.4)), key="all_start_value_input")
-        end_value = es_number_input(st, "End Value", value=float(st.session_state.get("all_end_value", 29.8)), key="all_end_value_input")
-        cagr_input = es_number_input(st, "CAGR (%)", value=float(st.session_state.get("all_cagr", 25.8)), key="all_cagr_input")
+        start_value = es_number_input(st, "Start Value", value=2.4, key="all_start_value_input")
+        end_value = es_number_input(st, "End Value", value=29.8, key="all_end_value_input")
+        cagr_input = es_number_input(st, "CAGR (%)", value=25.8, key="all_cagr_input")
 
     if country.strip().lower() != "global":
         feature = find_country_feature(country)
@@ -237,16 +271,6 @@ def render_page():
 
     st.divider()
     if st.button("🎨 Generar Todas las Imágenes", type="primary", width='stretch'):
-        st.session_state["all_market_name"] = market_name
-        st.session_state["all_country"] = country
-        st.session_state["all_currency"] = currency
-        st.session_state["all_base_year"] = int(base_year)
-        st.session_state["all_forecast_year"] = int(forecast_year)
-        st.session_state["all_start_value"] = start_value
-        st.session_state["all_end_value"] = end_value
-        st.session_state["all_cagr"] = cagr_input
-        st.session_state["all_unit"] = unit
-
         with st.spinner("Generando las 4 imágenes..."):
             common_growth_kwargs = dict(
                 market_name=market_name, country=country, currency=currency,
@@ -287,7 +311,7 @@ def render_page():
     if any(key in st.session_state for key, *_ in RESULT_SECTIONS):
         st.divider()
         st.subheader("Resultados")
-        name_for_files = st.session_state.get("all_market_name", market_name).replace(" ", "_")
+        name_for_files = market_name.replace(" ", "_")
         for state_key, title, export_prefix, filename_prefix in RESULT_SECTIONS:
             if state_key not in st.session_state:
                 continue
