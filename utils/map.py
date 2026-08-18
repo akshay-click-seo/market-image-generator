@@ -178,6 +178,32 @@ def resolve_region(name):
     return {"display": region["display"], "countries": countries}
 
 
+# North America here is just US + Canada (not the full Natural Earth
+# "North America" continent, which stretches down through Central America)
+# -- Mexico/Central America/Caribbean are grouped under "América Latina"
+# instead, as is standard in this 5-region market-research breakdown.
+# Mixing them into North America too would drag its pin south toward
+# Mexico instead of sitting over the US/Canada.
+_NORTH_AMERICA_ONLY = ["United States", "Canada"]
+
+
+def get_global_regions():
+    """The fixed 5-macro-region breakdown shown as pins on the world map
+    when Regional Analysis is generated for 'Global' (no specific country or
+    region selected): North America, Europe, Asia-Pacific, Latin America,
+    Middle East & Africa (combined into one pin). Distinct from
+    resolve_region() above, which matches ONE region a user explicitly
+    typed/pasted -- these 5 are always shown together for the Global view.
+    Built lazily (not at import time) since it reads the GeoJSON."""
+    return [
+        ("América del Norte", _NORTH_AMERICA_ONLY),
+        ("Europa", _feature_names_by_continent("Europe")),
+        ("Asia-Pacífico", _feature_names_by_continent("Asia") + _feature_names_by_continent("Oceania")),
+        ("América Latina", _LATAM_COUNTRIES),
+        ("Oriente Medio y África", _MIDDLE_EAST_COUNTRIES + _feature_names_by_continent("Africa")),
+    ]
+
+
 def _iter_polygons(geometry):
     """Yield lists of (lon, lat) rings for Polygon / MultiPolygon geometries."""
     gtype = geometry["type"]
@@ -213,6 +239,7 @@ def render_world_map(
     height_px=800,
     highlight_country=None,
     highlight_countries=None,
+    multi_region_pins=None,
     base_color="#AFCBEC",
     highlight_color="#0B2F7A",
     ocean_color="#FFFFFF",
@@ -240,9 +267,18 @@ def render_world_map(
     over `highlight_country`/`highlight_continent` when provided; pin_xy_px is
     then the mean centroid of all matched countries, a reasonable anchor for a
     region label callout (there being no single flag for a whole region).
+
+    `multi_region_pins` (a list of (label, [country names]) tuples) is for the
+    "Global" view -- instead of highlighting anything, it drops ONE pin per
+    region group at that group's mean centroid, leaving the base map color
+    untouched (5 highlighted-navy regions covering nearly the whole world
+    would just look like a solid navy blob, so pins-only reads better). Takes
+    priority over every other highlight_* param when provided. Return value
+    becomes (image, [(label, (x, y)), ...]) instead of (image, pin_xy_px) --
+    the caller is expected to know which mode it asked for.
     """
     cache_key = hashlib.md5(
-        f"{width_px}x{height_px}-{highlight_country}-{highlight_countries}-"
+        f"{width_px}x{height_px}-{highlight_country}-{highlight_countries}-{multi_region_pins}-"
         f"{base_color}-{highlight_color}-{ocean_color}-{highlight_continent}".encode()
     ).hexdigest()
     cache_path = os.path.join(CACHE_DIR, f"{cache_key}.png")
@@ -257,7 +293,13 @@ def render_world_map(
 
     target_feature = None
     region_features = []
-    if highlight_countries:
+    region_groups = []  # [(label, [features]), ...] -- multi_region_pins mode only
+    if multi_region_pins:
+        for label, countries in multi_region_pins:
+            feats = [f for f in (find_country_feature(c) for c in countries) if f is not None]
+            region_groups.append((label, feats))
+        target_feature_ids = set()
+    elif highlight_countries:
         for name in highlight_countries:
             feat = find_country_feature(name)
             if feat is not None:
@@ -269,7 +311,7 @@ def render_world_map(
         target_feature_ids = {id(target_feature)} if target_feature is not None else set()
 
     target_continent = None
-    if not highlight_countries and target_feature is not None and highlight_continent:
+    if not multi_region_pins and not highlight_countries and target_feature is not None and highlight_continent:
         target_continent = target_feature["properties"].get("CONTINENT")
 
     patches = []
@@ -309,23 +351,34 @@ def render_world_map(
     # entirely (it assumes the data spans edge-to-edge). transData reflects
     # the actual box matplotlib drew into, so it stays correct regardless
     # of how much letterboxing set_aspect introduces.
-    anchor_lonlat = None
-    if highlight_countries:
-        if region_features:
-            lons, lats = zip(*(country_centroid(f) for f in region_features))
-            anchor_lonlat = (sum(lons) / len(lons), sum(lats) / len(lats))
-    elif target_feature is not None:
-        anchor_lonlat = country_centroid(target_feature)
-
-    pin_xy_raw = None
-    if anchor_lonlat is not None:
-        lon, lat = anchor_lonlat
+    def _to_pin_raw(lon, lat):
         fig.canvas.draw()  # ensure the transform reflects final layout
         disp_x, disp_y = ax.transData.transform((lon, lat))
         # transData uses a bottom-left origin; convert to top-left (image/PIL
         # convention) using the actual figure pixel height at save-time.
         fig_h_px = fig.get_size_inches()[1] * fig.dpi
-        pin_xy_raw = (disp_x, fig_h_px - disp_y)
+        return (disp_x, fig_h_px - disp_y)
+
+    multi_pins_raw = None
+    pin_xy_raw = None
+    if multi_region_pins:
+        multi_pins_raw = []
+        for label, feats in region_groups:
+            if not feats:
+                continue
+            lons, lats = zip(*(country_centroid(f) for f in feats))
+            lon, lat = sum(lons) / len(lons), sum(lats) / len(lats)
+            multi_pins_raw.append((label, _to_pin_raw(lon, lat)))
+    else:
+        anchor_lonlat = None
+        if highlight_countries:
+            if region_features:
+                lons, lats = zip(*(country_centroid(f) for f in region_features))
+                anchor_lonlat = (sum(lons) / len(lons), sum(lats) / len(lats))
+        elif target_feature is not None:
+            anchor_lonlat = country_centroid(target_feature)
+        if anchor_lonlat is not None:
+            pin_xy_raw = _to_pin_raw(*anchor_lonlat)
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=dpi, facecolor=ocean_color)
@@ -335,15 +388,17 @@ def render_world_map(
     raw_w, raw_h = img.size
     img = img.resize((width_px, height_px), Image.LANCZOS)
 
-    pin_xy = None
-    if pin_xy_raw is not None:
-        # Scale the pin position from the pre-resize raw image's pixel
-        # space into the final width_px/height_px space (the two can
-        # differ by a pixel or two from dpi rounding).
-        px = pin_xy_raw[0] / raw_w * width_px
-        py = pin_xy_raw[1] / raw_h * height_px
-        pin_xy = (px, py)
+    # Scale a raw (pre-resize) pixel position into the final width_px/
+    # height_px space (the two can differ by a pixel or two from dpi
+    # rounding).
+    def _scale(raw_xy):
+        rx, ry = raw_xy
+        return (rx / raw_w * width_px, ry / raw_h * height_px)
 
+    if multi_region_pins:
+        return img, [(label, _scale(xy)) for label, xy in (multi_pins_raw or [])]
+
+    pin_xy = _scale(pin_xy_raw) if pin_xy_raw is not None else None
     return img, pin_xy
 
 

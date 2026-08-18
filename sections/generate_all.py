@@ -28,10 +28,16 @@ from templates import growth_style1, growth_style2, regional_style, segmentation
 from templates.segmentation_style import DEFAULT_PALETTE
 
 
+# "Otro" makes it explicit in the dropdown itself that anything not listed
+# here (a country, or a whole region like "Latinoamérica") can be typed into
+# the free-text field right below -- that field already overrides whatever
+# is picked here, "Otro" just signposts it instead of leaving users to
+# guess.
 COUNTRY_OPTIONS = [
     "Global", "México", "United States", "Brazil", "India", "China", "Germany", "United Kingdom",
     "France", "Japan", "South Korea", "Canada", "Australia", "Spain", "Italy",
     "Indonesia", "Saudi Arabia", "South Africa", "Argentina", "Nigeria", "Egypt",
+    "Otro",
 ]
 
 # "None" is for reports whose value has no currency at all (e.g. a plain

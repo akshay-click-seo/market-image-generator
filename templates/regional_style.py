@@ -14,7 +14,7 @@ import math
 
 from PIL import Image, ImageDraw, ImageFont
 from utils.backgrounds import render_background
-from utils.map import render_world_map, get_country_iso2, resolve_region
+from utils.map import render_world_map, get_country_iso2, resolve_region, get_global_regions
 from utils.flags import get_flag_badge
 from utils.icons import get_icon
 from utils.fonts import get_default_font_path
@@ -111,12 +111,18 @@ def render(
     # free text) and the title/label text (using the canonical display name).
     region_info = resolve_region(country)
     display_country = region_info["display"] if region_info else country
+    # "Global" (or blank) means no single country/region was picked -- show
+    # the 5 standard market-research macro-regions as pins across the whole
+    # map instead of highlighting one area.
+    is_global = country.strip().lower() in ("", "global")
 
     # ---- Header: logo (top-right corner) ----
     # Sized/positioned the same way as Growth Style 1's header logo -- top
     # right corner, above the title -- now that the right-side column no
     # longer holds stat cards.
     brand_x = width - margin
+    logo_top_y = int(margin * 0.5)
+    logo_bottom_y = logo_top_y  # no logo -> nothing to clear underneath
     resolved_logo_path = resolve_logo_path(logo_path, variant=logo_variant_for_background(background))
     logo_img = None
     if resolved_logo_path:
@@ -129,8 +135,9 @@ def render(
                 (max(1, int(logo_img.width * scale)), max(1, int(logo_img.height * scale))), Image.LANCZOS
             )
             logo_x = width - margin - logo_img.width
-            canvas.alpha_composite(logo_img, (logo_x, int(margin * 0.5)))
+            canvas.alpha_composite(logo_img, (logo_x, logo_top_y))
             brand_x = logo_x
+            logo_bottom_y = logo_top_y + logo_img.height
         except Exception:
             logo_img = None
 
@@ -162,7 +169,10 @@ def render(
         draw.text((center_x - tw / 2, ty), line, fill=NAVY, font=title_font)
         ty += title_font.size + 10
 
-    line_y = ty + 8
+    # Never let the underline cross behind the logo -- with a short
+    # (1-line) title, the title's own height alone can land the line above
+    # the logo's bottom edge, drawing it right through the logo text/mark.
+    line_y = max(ty + 8, logo_bottom_y + int(height * 0.015))
     draw.line([(margin, line_y), (width - margin, line_y)], fill=NAVY, width=2)
 
     # ---- World map with highlighted country ----
@@ -171,7 +181,16 @@ def render(
     # instead).
     map_w, map_h = int(width * 0.94), int(height * 0.72)
     map_top = line_y + int(height * 0.03)
-    if region_info:
+    region_pins = None
+    pin_xy = None
+    if is_global:
+        map_img, region_pins = render_world_map(
+            width_px=map_w, height_px=map_h,
+            multi_region_pins=get_global_regions(),
+            base_color=MAP_BASE, highlight_color=MAP_HIGHLIGHT,
+            ocean_color=(0, 0, 0, 0), border_color="#FFFFFF",
+        )
+    elif region_info:
         map_img, pin_xy = render_world_map(
             width_px=map_w, height_px=map_h,
             highlight_countries=region_info["countries"],
@@ -187,8 +206,42 @@ def render(
         )
     canvas.alpha_composite(map_img, (margin, int(map_top)))
 
+    # ---- Global view: one small pin + label per macro-region ----
+    if is_global and region_pins:
+        pin_r = int(width * 0.007)
+        label_font = _font(font_bold, int(width * 0.0125))
+        label_pad_x = int(width * 0.012)
+        label_h = int(height * 0.032)
+        map_left, map_right = margin, margin + map_w
+        map_bottom = map_top + map_h
+        for label, (rx, ry) in region_pins:
+            px, py = margin + rx, map_top + ry
+            # small pin marker (scaled-down version of the single-country pin)
+            draw.ellipse([px - pin_r, py - pin_r * 2.4, px + pin_r, py], fill="#E23B3B", outline="#FFFFFF", width=2)
+            draw.ellipse([px - pin_r * 0.4, py - pin_r * 1.6, px + pin_r * 0.4, py - pin_r * 0.8], fill="#FFFFFF")
+            pin_top_x, pin_top_y = px, py - pin_r * 2.4
+
+            lbbox = draw.textbbox((0, 0), label, font=label_font)
+            label_w = lbbox[2] - lbbox[0] + 2 * label_pad_x
+            label_x = px - label_w / 2
+            label_x = max(map_left, min(label_x, map_right - label_w))
+            label_y = pin_top_y - label_h - int(height * 0.01)
+            label_y = max(map_top, min(label_y, map_bottom - label_h))
+
+            connector_bottom = label_y + label_h if label_y + label_h < pin_top_y else label_y
+            draw.line([(pin_top_x, pin_top_y), (px, connector_bottom)], fill=NAVY, width=2)
+            draw.rounded_rectangle(
+                [label_x, label_y, label_x + label_w, label_y + label_h],
+                radius=int(label_h * 0.5), fill="#FFFFFF", outline=NAVY, width=2,
+            )
+            tbbox = draw.textbbox((0, 0), label, font=label_font)
+            text_h = tbbox[3] - tbbox[1]
+            text_x = label_x + (label_w - (tbbox[2] - tbbox[0])) / 2
+            text_y = label_y + (label_h - text_h) / 2 - tbbox[1]
+            draw.text((text_x, text_y), label, fill=NAVY, font=label_font)
+
     # pin marker + circular flag badge (dashed-line callout) on the highlighted country
-    if pin_xy:
+    if not is_global and pin_xy:
         px, py = pin_xy
         px += margin
         py += map_top
