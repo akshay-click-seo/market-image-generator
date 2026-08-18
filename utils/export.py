@@ -7,6 +7,23 @@ the target size by the calling template) and quality 50-100%.
 
 import io
 import os
+import re
+import unicodedata
+
+
+def slugify_filename(text):
+    """Normalize text for use in a download filename: strip accents/
+    diacritics (e.g. 'Pronóstico' -> 'Pronostico'), lowercase, replace
+    whitespace with hyphens, and drop anything that isn't a plain ascii
+    letter/digit/hyphen -- so a downloaded file name never contains a
+    special character, in any market name."""
+    normalized = unicodedata.normalize("NFKD", text)
+    ascii_only = "".join(c for c in normalized if not unicodedata.combining(c))
+    ascii_only = ascii_only.strip().lower()
+    ascii_only = re.sub(r"\s+", "-", ascii_only)
+    ascii_only = re.sub(r"[^a-z0-9\-]", "", ascii_only)
+    ascii_only = re.sub(r"-+", "-", ascii_only).strip("-")
+    return ascii_only
 
 
 SIZE_PRESETS = {

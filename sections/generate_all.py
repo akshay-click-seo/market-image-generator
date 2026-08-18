@@ -18,7 +18,7 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from utils.parser import extract_from_text, generate_yearly_values, compute_cagr, extract_segments_from_text
-from utils.export import export_image, file_extension_for
+from utils.export import export_image, file_extension_for, slugify_filename
 from utils.fonts import list_available_fonts, get_default_font_path
 from utils.state import init_state, get_canvas_size
 from utils.units import UNIT_LABELS
@@ -329,7 +329,7 @@ def render_page():
     if any(key in st.session_state for key, *_ in RESULT_SECTIONS):
         st.divider()
         st.subheader("Resultados")
-        name_for_files = market_name.strip().lower().replace(" ", "-")
+        name_for_files = slugify_filename(market_name)
         for state_key, title, export_prefix, filename_fn in RESULT_SECTIONS:
             if state_key not in st.session_state:
                 continue
