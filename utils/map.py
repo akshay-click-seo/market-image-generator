@@ -180,21 +180,41 @@ def render_world_map(
     ax.set_aspect(1.35)
     ax.axis("off")
 
+    # Compute the pin's pixel position via matplotlib's own data->display
+    # transform (ax.transData) BEFORE closing the figure, rather than a
+    # hand-rolled linear formula across the full width_px/height_px. With
+    # set_aspect() applied, the axes box is letterboxed/shrunk within the
+    # figure to preserve the aspect ratio -- for aspect ratios far from the
+    # default, this shifts the data horizontally within the figure by a
+    # large margin, which a naive full-width linear formula ignores
+    # entirely (it assumes the data spans edge-to-edge). transData reflects
+    # the actual box matplotlib drew into, so it stays correct regardless
+    # of how much letterboxing set_aspect introduces.
+    pin_xy_raw = None
+    if target_feature is not None:
+        lon, lat = country_centroid(target_feature)
+        fig.canvas.draw()  # ensure the transform reflects final layout
+        disp_x, disp_y = ax.transData.transform((lon, lat))
+        # transData uses a bottom-left origin; convert to top-left (image/PIL
+        # convention) using the actual figure pixel height at save-time.
+        fig_h_px = fig.get_size_inches()[1] * fig.dpi
+        pin_xy_raw = (disp_x, fig_h_px - disp_y)
+
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=dpi, facecolor=ocean_color)
     plt.close(fig)
     buf.seek(0)
     img = Image.open(buf).convert("RGBA")
+    raw_w, raw_h = img.size
     img = img.resize((width_px, height_px), Image.LANCZOS)
 
     pin_xy = None
-    if target_feature is not None:
-        lon, lat = country_centroid(target_feature)
-        # Convert data coords -> pixel coords using the axes limits set above
-        x0, x1 = -170, 190
-        y0, y1 = -58, 85
-        px = (lon - x0) / (x1 - x0) * width_px
-        py = (1 - (lat - y0) / (y1 - y0)) * height_px
+    if pin_xy_raw is not None:
+        # Scale the pin position from the pre-resize raw image's pixel
+        # space into the final width_px/height_px space (the two can
+        # differ by a pixel or two from dpi rounding).
+        px = pin_xy_raw[0] / raw_w * width_px
+        py = pin_xy_raw[1] / raw_h * height_px
         pin_xy = (px, py)
 
     return img, pin_xy

@@ -85,6 +85,28 @@ def render(
     draw = ImageDraw.Draw(canvas)
     margin = int(width * 0.03)
 
+    # ---- Header: logo (top-right corner) ----
+    # Sized/positioned the same way as Growth Style 1's header logo -- top
+    # right corner, above the title -- now that the right-side column no
+    # longer holds stat cards.
+    brand_x = width - margin
+    resolved_logo_path = resolve_logo_path(logo_path, variant=logo_variant_for_background(background))
+    logo_img = None
+    if resolved_logo_path:
+        try:
+            logo_img = Image.open(resolved_logo_path).convert("RGBA")
+            max_logo_h = int(height * 0.09)
+            max_logo_w = int(width * 0.22)
+            scale = min(max_logo_w / logo_img.width, max_logo_h / logo_img.height)
+            logo_img = logo_img.resize(
+                (max(1, int(logo_img.width * scale)), max(1, int(logo_img.height * scale))), Image.LANCZOS
+            )
+            logo_x = width - margin - logo_img.width
+            canvas.alpha_composite(logo_img, (logo_x, int(margin * 0.5)))
+            brand_x = logo_x
+        except Exception:
+            logo_img = None
+
     # ---- Title ----
     title_font = _font(font_bold, int(width * 0.028))
     title_lines = [f"Análisis Regional del Mercado de", f"{market_name} en {country}"]
@@ -100,7 +122,10 @@ def render(
     draw.line([(margin, line_y), (width - margin, line_y)], fill=NAVY, width=2)
 
     # ---- World map with highlighted country ----
-    map_w, map_h = int(width * 0.62), int(height * 0.62)
+    # Widened/enlarged to use most of the canvas now that the right-side
+    # stat-card column is gone (the logo moved up to the header corner
+    # instead).
+    map_w, map_h = int(width * 0.94), int(height * 0.72)
     map_top = line_y + int(height * 0.03)
     map_img, pin_xy = render_world_map(
         width_px=map_w, height_px=map_h,
@@ -171,29 +196,7 @@ def render(
         text_y = label_y + (label_h - text_h) / 2 - tbbox[1]
         draw.text((label_x + text_pad_x, text_y), badge_text, fill=NAVY, font=badge_font)
 
-    # ---- Right-side stat cards (Base year / Forecast year) ----
-    card_x = margin + map_w + int(width * 0.03)
-    card_w = width - card_x - margin
-    card_h = int(height * 0.14)
-    card_gap = int(height * 0.03)
-    card_y = map_top + int(height * 0.08)
-
-    base_display = f"{currency} {format_es_number(base_value, 2)}"
-    forecast_display = f"{currency} {format_es_number(forecast_value, 2)}"
     unit_word = short_label(unit)
-
-    cards = [
-        ("bar_chart", f"{base_display} {unit_word}", f"Tamaño del Mercado en {base_year}"),
-        ("globe", f"{forecast_display} {unit_word}", f"Tamaño del Mercado en {forecast_year}"),
-    ]
-
-    big_font = _font(font_bold, int(width * 0.019))
-    small_font = _font(font_medium, int(width * 0.012))
-
-    y = card_y
-    for icon_name, big_text, small_text in cards:
-        _draw_card(canvas, draw, card_x, y, card_w, card_h, icon_name, big_text, small_text, big_font, small_font)
-        y += card_h + card_gap
 
     # ---- Footer ----
     footer_y = height - int(height * 0.06)
@@ -203,14 +206,7 @@ def render(
     fw = fbbox[2] - fbbox[0]
     draw.text((center_x - fw / 2, footer_y + int(height * 0.015)), website, fill=NAVY, font=footer_font)
 
-    resolved_logo_path = resolve_logo_path(logo_path, variant=logo_variant_for_background(background))
-    if resolved_logo_path:
-        try:
-            logo = Image.open(resolved_logo_path).convert("RGBA")
-            logo.thumbnail((int(width * 0.1), int(height * 0.06)), Image.LANCZOS)
-            canvas.alpha_composite(logo, (width - margin - logo.width, margin // 2))
-        except Exception:
-            pass
+    # (Logo already drawn in the header, top-right corner -- see above.)
 
     return canvas.convert("RGB")
 

@@ -156,9 +156,12 @@ def render(
     cards = [
         {
             "icon": "globe",
-            "lines": [(f"CAGR {base_year+1} – {forecast_year}", TEXT_DARK, "small"),
-                      (cagr_display, NAVY, "big")],
-            "divider": True,
+            # Value first (big), label second (small) -- same order as the
+            # other two cards below, so all three cards position their big
+            # number identically instead of the CAGR value sitting lower
+            # than the others. No divider line either, to match.
+            "lines": [(cagr_display, NAVY, "big"),
+                      (f"CAGR {base_year+1} – {forecast_year}", TEXT_DARK, "small")],
         },
         {
             "icon": "bar_chart",
@@ -174,23 +177,36 @@ def render(
 
     column_h = len(cards) * card_h + (len(cards) - 1) * card_gap
     panel_inner_h = column_h + 2 * panel_pad
-    panel_h = min(panel_bottom - panel_top, max(panel_inner_h, int(height * 0.6)))
-    panel_y = panel_top + max(0, (panel_bottom - panel_top - panel_h) // 2)
+    panel_h = min(panel_bottom - panel_top, max(panel_inner_h, int(height * 0.68)))
+    # When the card column is shorter than the available panel band, don't
+    # split the leftover space evenly above/below -- that left a wide empty
+    # strip between the panel's bottom edge and the footer line below it.
+    # Bias the leftover slack slightly toward the TOP instead, so the panel
+    # sits a bit lower (closer to the footer) and that gap stays small,
+    # without pushing the panel's top down far enough to look disconnected
+    # from the chart above it.
+    panel_leftover = max(0, panel_bottom - panel_top - panel_h)
+    panel_y = panel_top + int(panel_leftover * 0.65)
     panel_bottom_edge = panel_y + panel_h
 
     # ---- Chart area (left ~72%) ----
-    chart_w = int(width * 0.68)
+    # chart_w is derived from panel_x (rather than a fixed width fraction)
+    # so the chart's right edge sits close to the right-side panel's left
+    # edge -- just a small breathing-room gap between them -- instead of
+    # leaving a wide empty strip of canvas in between.
+    chart_gap = int(width * 0.008)
+    chart_w = panel_x - margin - chart_gap
     chart_top = panel_top
-    footer_top = height - int(height * 0.075)
+    footer_top = height - int(height * 0.085)
     # Request a height tall enough that, after matplotlib's bbox_inches="tight"
     # crop (which shrinks the rendered image below the requested height_px --
     # empirically by roughly 12-15%), the chart's actual composited bottom
     # edge (x-axis row) lands at the panel's own bottom edge, instead of
     # ending well above the last stat card. Capped so it still can't overlap
     # the footer at small canvas sizes.
-    target_bottom = min(panel_bottom_edge, footer_top - int(height * 0.02))
+    target_bottom = min(panel_bottom_edge, footer_top - int(height * 0.01))
     chart_h = int((target_bottom - chart_top) * 1.15)
-    chart_h = min(chart_h, footer_top - chart_top - int(height * 0.02))
+    chart_h = min(chart_h, footer_top - chart_top - int(height * 0.01))
     unit_label_full = short_label(unit)
     bar_img = render_bar_chart(
         years, values,
@@ -198,6 +214,7 @@ def render(
         bar_color=NAVY, label_color=NAVY, axis_color=TEXT_DARK,
         background="none", font_path=font_bold,
         y_label=f"Valor de Mercado en {unit_label_full} de USD",
+        y_label_color=NAVY,
         value_formatter=lambda v: format_es_number(v, 1),
         labels_only_ends=True,
     )
@@ -303,7 +320,15 @@ def _draw_stat_card(canvas, draw, x, y, w, h, icon_name, lines, big_font, small_
     if divider:
         total_text_h += 8
 
-    ty = y + max(0, (h - total_text_h) // 2)
+    # Cards whose "big" value is the SECOND line (label -> divider -> value,
+    # e.g. the CAGR card) end up with that value sitting much lower than
+    # cards where the big value is the FIRST line, because pure mid-height
+    # centering treats the whole label+divider+value stack as one block.
+    # Bias those cards' block toward the top of the card instead of dead
+    # center so the big value lands closer to where it sits on the other
+    # cards, rather than sunk into the lower half.
+    top_bias = 0.22 if divider else 0.5
+    ty = y + max(0, int((h - total_text_h) * top_bias))
     for wrapped_lines, color, font, size in resolved:
         for line_text in wrapped_lines:
             draw.text((text_x, ty), line_text, fill=color, font=font)

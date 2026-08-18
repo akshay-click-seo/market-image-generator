@@ -34,6 +34,7 @@ def render_bar_chart(
     background="none",
     font_path=None,
     y_label="Market Value (USD Million)",
+    y_label_color=None,
     value_fmt="{:.1f}",
     value_formatter=None,
     dpi=150,
@@ -96,7 +97,18 @@ def render_bar_chart(
                         rotation=rotation, ha=ha)
     ax.set_ylim(0, max_val * 1.18)
 
-    ax.set_ylabel(y_label, fontsize=max(8, int(width_px / 110)), color=axis_color, fontweight="bold", labelpad=8)
+    # The y-axis label is a key data caption (units of the whole chart), so
+    # it's colored to stand out more than the plain axis_color tick labels
+    # -- its own (optionally distinct, more saturated) color instead of
+    # relying on bold weight alone -- with only a mild size bump. A bigger
+    # size jump was tried but pushed the rotated label past matplotlib's
+    # tight-bbox estimate at small export widths (e.g. 800px), clipping it;
+    # this formula matches the old size at small widths and only grows
+    # noticeably at larger ones, where there's headroom to spare.
+    ax.set_ylabel(
+        y_label, fontsize=max(8, int(width_px / 100)),
+        color=(y_label_color or axis_color), fontweight="bold", labelpad=8,
+    )
     ax.tick_params(axis="y", labelsize=max(7, int(width_px / 120)), colors=axis_color)
     ax.grid(axis="y", color=grid_color, linewidth=1, zorder=0)
     for spine in ["top", "right"]:
