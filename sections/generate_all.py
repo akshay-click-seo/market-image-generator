@@ -329,7 +329,7 @@ def render_page():
     if any(key in st.session_state for key, *_ in RESULT_SECTIONS):
         st.divider()
         st.subheader("Resultados")
-        name_for_files = market_name.strip().lower().replace(" ", "_")
+        name_for_files = market_name.strip().lower().replace(" ", "-")
         for state_key, title, export_prefix, filename_fn in RESULT_SECTIONS:
             if state_key not in st.session_state:
                 continue

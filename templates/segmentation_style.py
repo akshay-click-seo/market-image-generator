@@ -148,22 +148,29 @@ def render(
         edge_x = donut_cx + ring_outer_r * math.cos(rad)
         edge_y = donut_cy + ring_outer_r * math.sin(rad)
 
+        # `target_x/y` is just where the box WOULD sit if nothing needed to
+        # move to stay on-canvas -- used only to position the box, not to
+        # draw a bend in the connector line, so the line is always a single
+        # straight segment from the donut edge to the box (a 2-segment
+        # elbowed line used to be drawn here, but once the box got clamped
+        # to stay on-canvas the two segments could end up at very different
+        # angles, reading as a short, disconnected-looking stray line next
+        # to the box).
         connector_len = width * 0.09
-        elbow_x = donut_cx + (ring_outer_r + connector_len) * math.cos(rad)
-        elbow_y = donut_cy + (ring_outer_r + connector_len) * math.sin(rad)
+        target_x = donut_cx + (ring_outer_r + connector_len) * math.cos(rad)
+        target_y = donut_cy + (ring_outer_r + connector_len) * math.sin(rad)
 
         going_right = math.cos(rad) >= 0
         box_w = int(width * 0.19)
-        box_x = elbow_x if going_right else elbow_x - box_w
-        box_y = elbow_y - box_h / 2
+        box_x = target_x if going_right else target_x - box_w
+        box_y = target_y - box_h / 2
 
         # keep boxes within canvas bounds
         box_x = max(margin, min(box_x, width - margin - box_w))
         box_y = max(title_h + 10, min(box_y, height - box_h - int(height * 0.08)))
 
         anchor_x = box_x if going_right else box_x + box_w
-        draw.line([(edge_x, edge_y), (elbow_x, elbow_y)], fill=colors[i], width=3)
-        draw.line([(elbow_x, elbow_y), (anchor_x, box_y + box_h / 2)], fill=colors[i], width=3)
+        draw.line([(edge_x, edge_y), (anchor_x, box_y + box_h / 2)], fill=colors[i], width=3)
         draw.ellipse([edge_x - 5, edge_y - 5, edge_x + 5, edge_y + 5], fill=colors[i])
 
         draw.rounded_rectangle(
