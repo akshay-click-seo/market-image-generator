@@ -23,20 +23,24 @@ from utils.fonts import list_available_fonts, get_default_font_path
 from utils.state import init_state, get_canvas_size
 from utils.units import UNIT_LABELS
 from utils.numfmt import es_number_input, format_es_number_exact
-from utils.map import find_country_feature
+from utils.map import find_country_feature, resolve_region
 from templates import growth_style1, growth_style2, regional_style, segmentation_style
 from templates.segmentation_style import DEFAULT_PALETTE
 
 
-# "Otro" makes it explicit in the dropdown itself that anything not listed
-# here (a country, or a whole region like "Latinoamérica") can be typed into
-# the free-text field right below -- that field already overrides whatever
-# is picked here, "Otro" just signposts it instead of leaving users to
-# guess.
+# Curated for this tool's actual usage -- mostly Latin American markets
+# (this brand's core coverage) plus a handful of major global markets, with
+# "Latin America" itself included as a region option (resolves via
+# utils.map.resolve_region() to highlight every LatAm country on the
+# Regional Analysis map, same as typing it into the free-text field would).
+# "Global" (5-region world pins) and "Otro" (signposts the free-text field
+# below, which overrides whatever is picked here -- for any country/region
+# not in this list) are kept as the two special, non-country entries.
 COUNTRY_OPTIONS = [
-    "Global", "México", "United States", "Brazil", "India", "China", "Germany", "United Kingdom",
-    "France", "Japan", "South Korea", "Canada", "Australia", "Spain", "Italy",
-    "Indonesia", "Saudi Arabia", "South Africa", "Argentina", "Nigeria", "Egypt",
+    "Global",
+    "Colombia", "Chile", "Peru", "Argentina", "China", "Brazil", "Japan",
+    "Uruguay", "Ecuador", "El Salvador", "Venezuela", "Latin America",
+    "United States", "México",
     "Otro",
 ]
 
@@ -178,8 +182,11 @@ def render_page():
 
     if country.strip().lower() != "global":
         feature = find_country_feature(country)
+        region_info = None if feature else resolve_region(country)
         if feature:
             st.success(f"✅ País reconocido: {feature['properties'].get('NAME')} — el mapa de Regional Analysis se resaltará automáticamente.")
+        elif region_info:
+            st.success(f"✅ Región reconocida: {region_info['display']} — el mapa de Regional Analysis resaltará todos sus países automáticamente.")
         else:
             st.warning("⚠️ País no reconocido en la base de datos del mapa mundial (solo afecta a Regional Analysis).")
     else:
