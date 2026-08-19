@@ -18,7 +18,7 @@ from utils.backgrounds import render_background
 from utils.map import render_dotted_world_map
 from utils.fonts import get_default_font_path
 from utils.units import short_label
-from utils.numfmt import format_es_number, format_es_percent, format_money_parts
+from utils.numfmt import format_money_parts, format_es_number_exact, format_es_percent
 from utils.branding import resolve_logo_path, logo_variant_for_background
 
 
@@ -170,6 +170,11 @@ def render(
     draw.text((center_x - sw / 2, subtitle_y), subtitle, fill=GREY_TEXT, font=subtitle_font)
 
     # ---- CAGR card (top-left) ----
+    # CAGR is a DERIVED value (computed upstream from start/end via a
+    # compounding formula), not something the user typed/pasted directly --
+    # it essentially never comes out to a clean number, so it's kept at a
+    # fixed, readable precision (unlike start/end, which are the user's own
+    # exact figures and must never be rounded).
     cagr_display = format_es_percent(cagr, 2)
     card_w, card_h = int(width * 0.24), int(height * 0.16)
     # Normally a fixed fraction of height, but nudged down if a wrapped
@@ -192,8 +197,8 @@ def render(
     callout_font_val = _font(font_bold, int(width * 0.02))
     callout_font_label = _font(font_medium, int(width * 0.012))
 
-    start_display = format_money_parts(currency, format_es_number(start_value, 2))
-    end_display = format_money_parts(currency, format_es_number(end_value, 2))
+    start_display = format_money_parts(currency, format_es_number_exact(start_value))
+    end_display = format_money_parts(currency, format_es_number_exact(end_value))
     unit_word = short_label(unit)
 
     callout_y = int(height * 0.40)

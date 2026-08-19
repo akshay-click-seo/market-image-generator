@@ -42,6 +42,37 @@ def format_es_percent(value, decimals=2):
     return f"{format_es_number(value, decimals)}%"
 
 
+def format_es_number_exact(value, max_decimals=6):
+    """Format a number using Spanish conventions WITHOUT rounding it away --
+    preserves however many decimal digits the value actually has, instead of
+    always padding/truncating to a fixed count like format_es_number() does.
+
+    format_es_number_exact(9.873)   -> "9,873"   (NOT rounded to "9,9")
+    format_es_number_exact(29.8)    -> "29,8"    (NOT padded to "29,80")
+    format_es_number_exact(10179)   -> "10.179"  (whole numbers show no decimals)
+
+    `max_decimals` is just a safety cap against floating-point noise (e.g. a
+    value like 0.1 + 0.2 rendering as "0,30000000000000004") -- real report
+    figures never need anywhere near that many digits, so the cap never
+    truncates genuine precision in practice; trailing zeros beyond that are
+    always stripped first.
+    """
+    if value is None:
+        return ""
+    en = f"{value:,.{max_decimals}f}"
+    if "." in en:
+        en = en.rstrip("0").rstrip(".")
+    return en.replace(",", "￼").replace(".", ",").replace("￼", ".")
+
+
+def format_es_percent_exact(value, max_decimals=6):
+    """Percent version of format_es_number_exact(), e.g. 9.74 -> '9,74%',
+    9.7 -> '9,7%' (not padded/rounded to a fixed decimal count)."""
+    if value is None:
+        return ""
+    return f"{format_es_number_exact(value, max_decimals)}%"
+
+
 # Sentinel value used by the Currency dropdown's "None" option, for reports
 # whose value has no currency at all (e.g. a quantity in MMT/Toneladas with
 # no price attached).

@@ -43,7 +43,20 @@ UNIT_MULTIPLIERS = {
     "trillion": 1_000_000,
 }
 
-NUM = r"(?:USD|US\$|\$|€|£|₹|¥)?\s*(\d[\d,]*(?:\.\d+)?)"
+# Captures a full numeric token, in EITHER English (1,234.56) or Spanish
+# (1.234,56) convention -- deliberately does NOT assume which of "." / ","
+# is the thousands separator vs. the decimal separator at the regex level
+# (that ambiguity is resolved afterwards by _clean_number()/parse_es_number(),
+# which looks at which separator appears LAST). The old pattern
+# (`\d[\d,]*(?:\.\d+)?`) only allowed a SINGLE trailing dot-group and
+# treated every comma as a free-floating thousands separator -- so a
+# Spanish-formatted paste like "9.173,23" matched only as far as "9.173"
+# (the ",23" decimal tail was left over, silently dropped), corrupting
+# 9173.23 down to 9.173. Matching the whole digit/dot/comma run instead
+# (anchored to start AND end on a digit, so trailing sentence punctuation
+# like "9.173,23." never gets swept in) preserves every digit the user
+# pasted.
+NUM = r"(?:USD|US\$|\$|€|£|₹|¥)?\s*(\d(?:[\d.,]*\d)?)"
 
 
 @dataclass

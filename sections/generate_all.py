@@ -22,7 +22,7 @@ from utils.export import export_image, file_extension_for, slugify_filename
 from utils.fonts import list_available_fonts, get_default_font_path
 from utils.state import init_state, get_canvas_size
 from utils.units import UNIT_LABELS
-from utils.numfmt import es_number_input, format_es_number
+from utils.numfmt import es_number_input, format_es_number_exact
 from utils.map import find_country_feature
 from templates import growth_style1, growth_style2, regional_style, segmentation_style
 from templates.segmentation_style import DEFAULT_PALETTE
@@ -118,15 +118,15 @@ def render_page():
         if st.button("🔍 Extraer datos", key="all_extract_btn"):
             extracted = extract_from_text(pasted_text)
             if extracted.start_value is not None:
-                st.session_state["all_start_value_input"] = format_es_number(extracted.start_value, 2)
+                st.session_state["all_start_value_input"] = format_es_number_exact(extracted.start_value)
             if extracted.end_value is not None:
-                st.session_state["all_end_value_input"] = format_es_number(extracted.end_value, 2)
+                st.session_state["all_end_value_input"] = format_es_number_exact(extracted.end_value)
             if extracted.base_year is not None:
                 st.session_state["all_base_year_input"] = int(extracted.base_year)
             if extracted.forecast_year is not None:
                 st.session_state["all_forecast_year_input"] = int(extracted.forecast_year)
             if extracted.cagr is not None:
-                st.session_state["all_cagr_input"] = format_es_number(extracted.cagr, 2)
+                st.session_state["all_cagr_input"] = format_es_number_exact(extracted.cagr)
             if extracted.currency in CURRENCY_OPTIONS:
                 st.session_state["all_currency_select"] = extracted.currency
             if extracted.unit in UNIT_LABELS:

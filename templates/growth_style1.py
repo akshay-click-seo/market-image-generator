@@ -17,7 +17,10 @@ from utils.backgrounds import render_background
 from utils.icons import get_icon
 from utils.fonts import get_default_font_path
 from utils.units import short_label
-from utils.numfmt import format_es_number, format_es_percent, format_money_parts, has_currency
+from utils.numfmt import (
+    format_money_parts, has_currency,
+    format_es_number_exact, format_es_percent,
+)
 from utils.branding import resolve_logo_path, logo_variant_for_background
 
 
@@ -142,9 +145,14 @@ def render(
     card_gap = int(height * 0.02)
     card_h = int(height * 0.145)
 
-    cagr_display = format_es_percent(cagr, 1)
-    end_display = format_es_number(end_value, 1)
-    start_display = format_es_number(start_value, 1)
+    # CAGR is a DERIVED value (computed from start/end via a compounding
+    # formula upstream), not something the user typed/pasted directly -- it
+    # essentially never comes out to a clean number, so it's kept at a
+    # fixed, readable precision (unlike start/end, which are the user's own
+    # exact figures and must never be rounded).
+    cagr_display = format_es_percent(cagr, 2)
+    end_display = format_es_number_exact(end_value)
+    start_display = format_es_number_exact(start_value)
     unit_label_full = short_label(unit)
 
     # Three stat cards -- CAGR, ending market size, starting market size --
@@ -215,7 +223,7 @@ def render(
         background="none", font_path=font_bold,
         y_label=y_label,
         y_label_color=NAVY,
-        value_formatter=lambda v: format_es_number(v, 1),
+        value_formatter=lambda v: format_es_number_exact(v),
         labels_only_ends=True,
     )
     canvas.alpha_composite(bar_img, (margin, chart_top))
