@@ -29,6 +29,15 @@ GREY_TEXT = "#5B6B8C"
 MAP_BASE = "#AFCBEC"
 MAP_HIGHLIGHT = "#0B2F7A"
 
+# Display-only translation for country names whose Spanish spelling differs
+# from the English one used for map/flag lookups (`country` itself stays in
+# English -- e.g. "Spain" -- so find_country_feature()/get_country_iso2()/
+# the flag badge keep matching the Natural Earth data; only the label text
+# drawn on the image is swapped to the Spanish form).
+_COUNTRY_DISPLAY_ES = {
+    "spain": "España",
+}
+
 
 def _font(path, size):
     try:
@@ -110,7 +119,10 @@ def render(
     # below (shading every country in the region, not just showing unhighlighted
     # free text) and the title/label text (using the canonical display name).
     region_info = resolve_region(country)
-    display_country = region_info["display"] if region_info else country
+    display_country = (
+        region_info["display"] if region_info
+        else _COUNTRY_DISPLAY_ES.get(country.strip().lower(), country)
+    )
     # "Global" (or blank) means no single country/region was picked -- show
     # the 5 standard market-research macro-regions as pins across the whole
     # map instead of highlighting one area.

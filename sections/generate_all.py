@@ -40,7 +40,7 @@ COUNTRY_OPTIONS = [
     "Global",
     "Colombia", "Chile", "Peru", "Argentina", "China", "Brazil", "Japan",
     "Uruguay", "Ecuador", "El Salvador", "Venezuela", "Latin America",
-    "United States", "México",
+    "United States", "México", "Spain",
     "Otro",
 ]
 
@@ -195,21 +195,32 @@ def render_page():
     num_years = int(forecast_year) - int(base_year)
     years = list(range(int(base_year), int(forecast_year) + 1))
 
-    # Prefer the CAGR implied by Start -> End so the bar-by-bar curve always
-    # traces a real growth path between the two stated values (same logic
-    # as the original Market Growth page).
+    # The intermediate (non-base/forecast-year) bar heights are never data
+    # the user actually supplied -- only start_value, end_value and a CAGR
+    # are given, not a figure for every year in between -- so SOME curve has
+    # to be derived to shape those bars, and the Start -> End implied rate
+    # gives a smooth, real growth path between the two stated values. This
+    # is purely a visual interpolation, though: no number from it is ever
+    # shown as a labeled value (values[0]/[-1] are forced back to the
+    # user's own start_value/end_value right below), so it doesn't conflict
+    # with "show my data, don't recalculate it" -- that rule applies to
+    # displayed figures (the CAGR card below, and the start/end labels),
+    # not to an invisible chart curve.
     effective_growth_cagr = compute_cagr(start_value, end_value, num_years)
     if effective_growth_cagr is None:
         effective_growth_cagr = cagr_input
     values = generate_yearly_values(start_value, effective_growth_cagr, num_years)
     if values:
+        values[0] = start_value
         values[-1] = end_value
     if len(values) != len(years):
         if len(values) < len(years):
             values += [values[-1] if values else 0] * (len(years) - len(values))
         else:
             values = values[:len(years)]
-    computed_cagr = compute_cagr(start_value, end_value, num_years) or cagr_input
+    # CAGR shown on the image (stat card) must be exactly what the user
+    # typed/pasted -- NOT a value silently recalculated from start/end.
+    display_cagr = cagr_input
 
     st.divider()
     st.subheader("Segmentación")
@@ -300,7 +311,7 @@ def render_page():
             common_growth_kwargs = dict(
                 market_name=market_name, country=country, currency=currency,
                 base_year=int(base_year), forecast_year=int(forecast_year),
-                start_value=start_value, end_value=end_value, cagr=computed_cagr,
+                start_value=start_value, end_value=end_value, cagr=display_cagr,
                 years=years, values=values, unit=unit, website=website,
                 logo_path=logo_path, background=background,
                 font_regular=font_regular_path, font_bold=font_bold_path,
