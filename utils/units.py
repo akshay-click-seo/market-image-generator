@@ -68,7 +68,7 @@ UNIT_OPTIONS = [
     ("Millones de Unidades", "MM Unidades"),
     ("Mil Millones de Unidades", "Mil MM Unidades"),
     ("Billones de Unidades", "Bn Unidades"),
-    ("Millones de Toneladas", "MM Toneladas"),
+    ("Millones de Toneladas", "Millones de Toneladas"),
     ("Mil Millones de Toneladas", "Mil MM Toneladas"),
     ("Billones de Toneladas", "Bn Toneladas"),
     ("Toneladas Métricas", "Ton Métricas"),
