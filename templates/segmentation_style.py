@@ -64,13 +64,13 @@ def render(
 
     Args:
         market_name: str, used in the title
-        segments: list of 2-8 label strings, e.g. ["Por Tipo de Producto", "Por Aplicación", ...]
+        segments: list of 1-8 label strings, e.g. ["Por Tipo de Producto", "Por Aplicación", ...]
         colors: optional list of hex colors, one per segment
 
     Returns PIL.Image (RGB).
     """
-    if not (2 <= len(segments) <= 8):
-        raise ValueError("segments must contain between 2 and 8 labels")
+    if not (1 <= len(segments) <= 8):
+        raise ValueError("segments must contain between 1 and 8 labels")
 
     font_regular = font_regular or get_default_font_path("Regular")
     font_bold = font_bold or get_default_font_path("Bold")
@@ -129,14 +129,18 @@ def render(
         draw.pieslice(ring_bbox, a0, a1, fill=colors[i])
         mid_angles.append((a0 + a1) / 2)
 
-    # cut the hole (donut effect) + white separators
+    # cut the hole (donut effect) + white separators. With only 1 segment
+    # there's nothing to separate (the pieslice above already fills the
+    # whole 360°) -- drawing the "separator" anyway would just cut a
+    # stray, meaningless notch into an otherwise solid ring.
     bg_sample = canvas.getpixel((5, height - 5))
     draw.ellipse(hole_bbox, fill=bg_sample)
-    for i in range(n):
-        a0 = math.radians(start_angle + i * angle_per)
-        x0, y0 = donut_cx + hole_r * math.cos(a0), donut_cy + hole_r * math.sin(a0)
-        x1, y1 = donut_cx + (donut_d / 2) * math.cos(a0), donut_cy + (donut_d / 2) * math.sin(a0)
-        draw.line([(x0, y0), (x1, y1)], fill=bg_sample, width=max(3, int(width * 0.006)))
+    if n > 1:
+        for i in range(n):
+            a0 = math.radians(start_angle + i * angle_per)
+            x0, y0 = donut_cx + hole_r * math.cos(a0), donut_cy + hole_r * math.sin(a0)
+            x1, y1 = donut_cx + (donut_d / 2) * math.cos(a0), donut_cy + (donut_d / 2) * math.sin(a0)
+            draw.line([(x0, y0), (x1, y1)], fill=bg_sample, width=max(3, int(width * 0.006)))
 
     # ---- Callout boxes around the ring, connected via lines ----
     label_font = _font(font_bold, int(width * 0.015))

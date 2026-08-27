@@ -242,7 +242,7 @@ def render_page():
                         st.session_state[f"all_seg_label_{i}"] = found[i]
                     else:
                         st.session_state.pop(f"all_seg_label_{i}", None)
-                st.session_state["all_n_segments_pending"] = max(2, min(8, len(found)))
+                st.session_state["all_n_segments_pending"] = max(1, min(8, len(found)))
                 st.success(f"Extraídos {len(found)} segmentos: {', '.join(found)}")
                 st.rerun()
             else:
@@ -250,7 +250,7 @@ def render_page():
 
     slider_default = st.session_state.pop("all_n_segments_pending", None) or st.session_state.get("all_n_segments", 5)
     n_segments = st.select_slider(
-        "Número máximo de campos a mostrar", options=[2, 3, 4, 5, 6, 7, 8],
+        "Número máximo de campos a mostrar", options=[1, 2, 3, 4, 5, 6, 7, 8],
         value=slider_default, key="all_n_segments",
     )
     seg_labels, seg_colors = [], []
@@ -327,7 +327,7 @@ def render_page():
                 font_regular=font_regular_path, font_bold=font_bold_path,
                 width=width, height=height,
             )
-            if len(filled_segments) >= 2:
+            if len(filled_segments) >= 1:
                 st.session_state["all_seg_image"] = segmentation_style.render(
                     market_name=market_name,
                     segments=[l for l, _ in filled_segments],
@@ -338,8 +338,8 @@ def render_page():
                 )
             else:
                 st.session_state.pop("all_seg_image", None)
-        if len(filled_segments) < 2:
-            st.warning("Segmentation: escribe al menos 2 segmentos con nombre para incluir esa imagen. Las otras 3 sí se generaron.")
+        if len(filled_segments) < 1:
+            st.warning("Segmentation: escribe al menos 1 segmento con nombre para incluir esa imagen. Las otras 3 sí se generaron.")
         else:
             st.success("¡Listas! Las 4 imágenes se muestran abajo.")
 
