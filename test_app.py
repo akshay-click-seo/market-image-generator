@@ -56,6 +56,17 @@ def test_generate_all_page():
     return True
 
 
+def test_rd_description_page():
+    at = AppTest.from_file("app.py")
+    at.run(timeout=30)
+    at.sidebar.radio[0].set_value("📝 RD Description").run(timeout=30)
+    if at.exception:
+        print("[RD Description nav] EXCEPTION:", at.exception)
+        return False
+    print("[RD Description nav] OK")
+    return True
+
+
 def test_settings_page():
     at = AppTest.from_file("app.py")
     at.run(timeout=30)
@@ -82,6 +93,7 @@ if __name__ == "__main__":
     results = {
         "dashboard": test_dashboard(),
         "generate_all": test_generate_all_page(),
+        "rd_description": test_rd_description_page(),
         "settings": test_settings_page(),
         "export": test_export_page(),
     }

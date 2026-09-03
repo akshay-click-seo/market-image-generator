@@ -34,7 +34,7 @@ def sidebar_nav():
     st.sidebar.caption("Automatiza tus dashboards de mercado estilo Informes de Expertos")
     page = st.sidebar.radio(
         "Navegación",
-        ["🏠 Dashboard", "🎨 Generar Imágenes", "⚙️ Settings", "📤 Export"],
+        ["🏠 Dashboard", "🎨 Generar Imágenes", "📝 RD Description", "⚙️ Settings", "📤 Export"],
     )
     st.sidebar.divider()
     st.sidebar.caption("v1.0 · Regex-based auto-extraction · Sin dependencias de red")
@@ -171,6 +171,9 @@ def main():
     elif page == "🎨 Generar Imágenes":
         from sections import generate_all
         generate_all.render_page()
+    elif page == "📝 RD Description":
+        from sections import rd_description
+        rd_description.render_page()
     elif page == "⚙️ Settings":
         page_settings()
     elif page == "📤 Export":
