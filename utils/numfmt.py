@@ -91,10 +91,20 @@ def format_money_parts(currency, *parts):
 
     If `currency` is falsy or the NO_CURRENCY sentinel, it's simply
     omitted -- the literal word "None" must never be rendered on a
-    generated image, only used internally to mean "no currency"."""
+    generated image, only used internally to mean "no currency".
+
+    Some unit labels already spell out a currency inside them (e.g.
+    "Millones de USD", "Mil Millones de USD") -- now that units are shown
+    on the image exactly as selected (no more shortening), prefixing the
+    currency code again would print it twice, e.g. "USD 29,8 Millones de
+    USD". So the code is only prepended if it isn't already present
+    (case-insensitively) in one of the other parts."""
     bits = [p for p in parts if p]
     if has_currency(currency):
-        bits.insert(0, currency.strip())
+        code = currency.strip()
+        already_shown = any(code.lower() in p.lower() for p in bits)
+        if not already_shown:
+            bits.insert(0, code)
     return " ".join(bits)
 
 

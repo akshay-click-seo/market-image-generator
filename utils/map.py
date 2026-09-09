@@ -108,6 +108,14 @@ _LATAM_COUNTRIES = [
     "Guyana", "Suriname",
 ]
 
+# The 7 Central American countries proper -- a narrower sub-region of
+# _LATAM_COUNTRIES above (Mexico excluded: it's geopolitically North
+# American and already its own separate dropdown option/country pin).
+_CENTRAL_AMERICA_COUNTRIES = [
+    "Guatemala", "Belize", "Honduras", "El Salvador", "Nicaragua",
+    "Costa Rica", "Panama",
+]
+
 _MIDDLE_EAST_COUNTRIES = [
     "Saudi Arabia", "United Arab Emirates", "Qatar", "Kuwait", "Bahrain",
     "Oman", "Iraq", "Iran", "Israel", "Jordan", "Lebanon", "Syria", "Yemen",
@@ -116,6 +124,7 @@ _MIDDLE_EAST_COUNTRIES = [
 
 _REGION_DEFS = {
     "latam": {"display": "Latin America", "countries": _LATAM_COUNTRIES},
+    "camerica": {"display": "América Central", "countries": _CENTRAL_AMERICA_COUNTRIES},
     "namer": {"display": "Norteamérica", "continents": ["North America"]},
     "europe": {"display": "Europa", "continents": ["Europe"]},
     "africa": {"display": "África", "continents": ["Africa"]},
@@ -130,8 +139,11 @@ _REGION_ALIASES = {
     "latinoamerica": "latam", "latino america": "latam", "america latina": "latam",
     "latin america": "latam", "latin american": "latam", "latam": "latam",
     "sudamerica": "latam", "south america": "latam", "suramerica": "latam",
-    "sudamerica y centroamerica": "latam", "centroamerica": "latam",
-    "central america": "latam", "america central": "latam",
+    "sudamerica y centroamerica": "latam",
+
+    "centroamerica": "camerica", "central america": "camerica",
+    "america central": "camerica", "centro america": "camerica",
+    "central american": "camerica",
 
     "norteamerica": "namer", "north america": "namer", "america del norte": "namer",
     "america del norte y canada": "namer",

@@ -18,7 +18,6 @@ from utils.map import render_world_map, get_country_iso2, resolve_region, get_gl
 from utils.flags import get_flag_badge
 from utils.icons import get_icon
 from utils.fonts import get_default_font_path
-from utils.units import short_label
 from utils.numfmt import format_es_number
 from utils.branding import resolve_logo_path, logo_variant_for_background
 
@@ -323,8 +322,6 @@ def render(
         text_h = tbbox[3] - tbbox[1]
         text_y = label_y + (label_h - text_h) / 2 - tbbox[1]
         draw.text((label_x + text_pad_x, text_y), badge_text, fill=NAVY, font=badge_font)
-
-    unit_word = short_label(unit)
 
     # ---- Footer ----
     footer_y = height - int(height * 0.06)

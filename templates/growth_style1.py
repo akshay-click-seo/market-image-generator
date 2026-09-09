@@ -16,7 +16,6 @@ from utils.chart import render_bar_chart
 from utils.backgrounds import render_background
 from utils.icons import get_icon
 from utils.fonts import get_default_font_path
-from utils.units import short_label
 from utils.numfmt import (
     format_money_parts, has_currency,
     format_es_number_exact, format_es_percent,
@@ -153,7 +152,9 @@ def render(
     cagr_display = format_es_percent(cagr, 2)
     end_display = format_es_number_exact(end_value)
     start_display = format_es_number_exact(start_value)
-    unit_label_full = short_label(unit)
+    # Unit is shown on the image EXACTLY as entered/selected -- no automatic
+    # abbreviation to a "short form", for any unit (existing or newly added).
+    unit_label_full = unit
 
     # Three stat cards -- CAGR, ending market size, starting market size --
     # matching the reference layout (the "Período de Pronóstico" 4th card
@@ -212,9 +213,15 @@ def render(
     target_bottom = min(panel_bottom_edge, footer_top - int(height * 0.01))
     chart_h = int((target_bottom - chart_top) * 1.15)
     chart_h = min(chart_h, footer_top - chart_top - int(height * 0.01))
-    unit_label_full = short_label(unit)
+    # Unit is shown on the image EXACTLY as entered/selected -- no automatic
+    # abbreviation to a "short form", for any unit (existing or newly added).
+    unit_label_full = unit
     y_label = f"Valor de Mercado en {unit_label_full}"
-    if has_currency(currency):
+    # Skip appending "de <currency>" when the unit already spells the
+    # currency out itself (e.g. "Millones de USD") -- now that units show
+    # in full rather than abbreviated, that avoids a duplicated "...de USD
+    # de USD" on the axis label.
+    if has_currency(currency) and currency.strip().lower() not in unit_label_full.lower():
         y_label += f" de {currency.strip()}"
     bar_img = render_bar_chart(
         years, values,

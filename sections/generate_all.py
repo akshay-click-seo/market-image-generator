@@ -39,7 +39,7 @@ from templates.segmentation_style import DEFAULT_PALETTE
 COUNTRY_OPTIONS = [
     "Global",
     "Colombia", "Chile", "Peru", "Argentina", "China", "Brazil", "Japan",
-    "Uruguay", "Ecuador", "El Salvador", "Venezuela", "Latin America",
+    "Uruguay", "Ecuador", "El Salvador", "Venezuela", "Latin America", "América Central",
     "United States", "México", "Spain",
     "Otro",
 ]

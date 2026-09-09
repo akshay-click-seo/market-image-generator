@@ -17,7 +17,6 @@ from utils.chart import render_gradient_bar_chart
 from utils.backgrounds import render_background
 from utils.map import render_dotted_world_map
 from utils.fonts import get_default_font_path
-from utils.units import short_label
 from utils.numfmt import format_money_parts, format_es_number_exact, format_es_percent
 from utils.branding import resolve_logo_path, logo_variant_for_background
 
@@ -163,7 +162,9 @@ def render(
     # wording is already in the main title above it, so repeating it here
     # would be redundant.
     subtitle_font = _font(font_medium, int(width * 0.015))
-    subtitle = format_money_parts(currency, short_label(unit))
+    # Unit is shown EXACTLY as entered/selected -- no automatic abbreviation
+    # to a "short form", for any unit (existing or newly added).
+    subtitle = format_money_parts(currency, unit)
     sbbox = draw.textbbox((0, 0), subtitle, font=subtitle_font)
     sw = sbbox[2] - sbbox[0]
     subtitle_y = underline_y + 16
@@ -199,7 +200,7 @@ def render(
 
     start_display = format_money_parts(currency, format_es_number_exact(start_value))
     end_display = format_money_parts(currency, format_es_number_exact(end_value))
-    unit_word = short_label(unit)
+    unit_word = unit
 
     callout_y = int(height * 0.40)
     callout_text_h = callout_font_val.size + callout_font_label.size + 8
