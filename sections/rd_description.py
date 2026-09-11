@@ -12,15 +12,19 @@ from pathlib import Path
 
 import streamlit as st
 
+from utils.page_header import render_hero
+
 ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
 TOOL_HTML_PATH = Path(ASSETS_DIR) / "rd_description.html"
 
 
 def render_page():
-    st.title("📝 RD Description")
-    st.caption(
-        "Convierte archivos DOCX a HTML fuente (para pegar en el sistema/CMS) -- "
-        "todo se procesa en tu navegador, sin subir el archivo a ningún servidor."
+    render_hero(
+        "📝", "RD Description", eyebrow="DOCX → HTML",
+        subtitle=(
+            "Convierte archivos DOCX a HTML fuente (para pegar en el sistema/CMS) -- "
+            "todo se procesa en tu navegador, sin subir el archivo a ningún servidor."
+        ),
     )
 
     if not TOOL_HTML_PATH.exists():
